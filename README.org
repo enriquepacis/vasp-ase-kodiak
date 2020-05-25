@@ -1,8 +1,12 @@
-#+TITLE: A new ASE interface to Vasp
-#+date: May 4, 2016
+#+TITLE: ASE Wrapper for VASP on Kodiak
+#+date: May 25, 2020
 
 * Why?
-To make it compliant with the FileIOCalculator in ase, and hopefully simplify it.
+This adapts the VASP wrapper by John Kitchin for use on Baylor's Kodiak.
+To really give credit where credit is due, this is a clone of Jerry Crum's
+branch, because it seems to be for a newer Python version (3.7.0, I believe,
+on an SGE high-performance computing job scheduler). I then adapted it for use
+on Baylor's Kodiak HPC cluster, PBS system, and Python 3.7.2+.
 
 * Goals
 1. Provide an interface that allows all vasp INCAR tags without
