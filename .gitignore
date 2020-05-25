@@ -1,0 +1,31 @@
+# Ignore compiled python
+*.pyc
+
+# Ignore large/proprietary VASP files
+CHG
+CONTCAR
+DOSCAR
+EIGENVAL
+IBZKPT
+INCAR
+KPOINTS
+METADATA
+OSZICAR
+OUTCAR
+PCDAT
+POSCAR
+POTCAR
+vasprun.xml
+XDATCAR
+ase-sort.dat
+CHGCAR
+WAVECAR
+*.o[0-9]*
+DYNMAT
+jobid
+DB.db
+# calculation directories
+molecules
+/.doit.db
+bulk
+vasp.egg-info
