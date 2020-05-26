@@ -23,24 +23,89 @@ on Baylor's Kodiak HPC cluster, PBS system, and Python 3.7.2+.
 
 * Installation
 
-Clone this repo somewhere. Add it to your PYTHONPATH and PATH. Set VASP_PP_PATH to point to the directory containing your POTCARs.
+1. Clone this repo somewhere, using
+   #+BEGIN_SOURCE sh
+   git clone https://github.com/enriquepacis/vasp-ase-kodiak.git
+   #+END_SOURCE
+   Note:
+   1. This will produce a folder =vasp= (I believe), with another =vasp=
+      directory nested inside.
+2. /Optional/ You might want to rename the outer =vasp=
+   to something else, such as =kodiak-vasp=. I find doing so makes things
+   less confusing. To do so, you can use
+   #+BEGIN_SRC sh
+   mv vasp kodiak-vasp
+   #+END_SRC
+   in the terminal from within the folder containing the outer =vasp=.
+   Follow it up with =ls -lt= to verify your operation succeeded.
+3. Add the =kodiak-vasp= directory (or your outer =vasp= directory) to your
+   PYTHONPATH and PATH variables by adding lines like this to your
+   =~/.bashrc= file
+   #+BEGIN_SRC sh
+   export PYTHONPATH=path-to/kodiak-vasp:$PYTHONPATH
+   export PATH=path-to/kodiak-vasp/bin:$PATH
 
-#+BEGIN_SRC python
-export PYTHONPATH=~/kitchin-python/vasp:$PYTHONPATH
-export PATH=~/kitchin-python/vasp/bin:$PATH
+   export VASP_PP_PATH=path-to/your/psuedopotentials
+   #+END_SRC
+   These place-holder =path-to/your/psuedopotentials= should contain your
+   POTCARs. For example, in my setup, I have the pseudopotentials in
+   =~/materials/vasp/pseudo=.
+      
+   After I set this up properly, then I can execute this code block:
+   #+BEGIN_SRC sh
+   ls -d $VASP_PP_PATH/potpaw_*
+   #+END_SRC
 
-export VASP_PP_PATH=/opt/kitchingroup/vasp-5.3.5
-#+END_SRC
+   #+RESULTS:
+   | /ion/home/blaire/materials/vasp/pseudo/potpaw_LDA        |
+   | /ion/home/blaire/materials/vasp/pseudo/potpaw_LDA.54.tar |
+   | /ion/home/blaire/materials/vasp/pseudo/potpaw_PBE        |
+   | /ion/home/blaire/materials/vasp/pseudo/potpaw_PBE.54.tar |
 
-These directories should contain your POTCARs.
-#+BEGIN_SRC sh
-ls -d $VASP_PP_PATH/potpaw_???
-#+END_SRC
+   I see that it found two directories containing LDA or PBE pseudopotentials
+   along with the =*.tar= archives from which they were extracted.
+4. Make a =.vasprc= file, and place it in your main user directory (=~/=).
+   If you like, you can modify and tangle this:
+   #+BEGIN_SRC text :padline no :tangle ~/.vasprc
+   # adjust these for the your system
+   # the file names given here assume that your ~/.bashrc contains a line
+   # that adds the path to the VASP executables. For example:
+   # export PATH=/usr/local/VASP/vasp.5.4.4/bin:$PATH
+   vasp.executable.serial = vasp_std
+   vasp.executable.parallel = vasp_std
+      
+   user.name = namey
+   user.email = your_name@baylor.edu
 
-#+RESULTS:
-: /opt/kitchingroup/vasp-5.3.5/potpaw_GGA
-: /opt/kitchingroup/vasp-5.3.5/potpaw_LDA
-: /opt/kitchingroup/vasp-5.3.5/potpaw_PBE
+
+   mode = queue   # run|queue|None
+
+   multiprocessing.cores_per_process = None
+
+   # for VASP on Kodiak, we need the intel module
+   module = intel
+
+   # these are only needed if you run in a queue. Setting a few defaults here. SGE needs nprocs, q, pe.
+
+   scheduler = PBS # SGE|PBS
+   queue.shell= bash
+   queue.command = qsub
+   queue.options = -m abe
+   queue.time = 168:00:00
+   queue.nodes = 2
+   queue.ppn = 8
+   queue.nprocs = 4
+   queue.mem = 2G
+   queue.jobname = None
+   queue.q = batch
+   queue.pe = mpi
+   vdw_kernel.bindat = /afs/crc.nd.edu/x86_64_linux/vasp/5.3.5/ompi1.6.3/vdw_kernel.bindat
+   #+END_SRC
+   Notes:
+   1. At this time, I haven't used the =vdw_kernel.bindat= data file. We can
+      download it from the VASP user portal if we need it, and we can then
+      point the =vdw_kernel.bindat= variable to this location.
+
 
 * Differences from ase.calculators.vasp
 Most things are the same. Here are few differences.
@@ -150,7 +215,8 @@ calc = Vasp('~/dft-book-new-vasp/molecules/simple-co',  # output dir
             sigma=0.01,  # very small smearing factor for a molecule
             atoms=co)
 
-print('energy = {0} eV'.format(co.get_potential_energy()))
+# print('energy = {0} eV'.format(co.get_potential_energy())) - old - EPB
+print('energy = {0} eV'.format(calc.potential_energy))
 print(co.get_forces())
 #+END_SRC
 
@@ -183,11 +249,11 @@ calcs = [Vasp('~/dft-book-new-vasp/molecules/co-{0}'.format(d),  # output dir
                 atoms=atoms)
          for d, atoms in zip(bond_lengths, ATOMS)]
 
-energies = [atoms.get_potential_energy() for atoms in ATOMS]
+energies = [calc.potential_energy for calc in calcs]
 
 print(energies)
 #+END_SRC
- tpptree
+
 #+RESULTS:
 : [-14.21584765, -14.72174343, -14.84115208, -14.69111507, -14.35508371]
 
