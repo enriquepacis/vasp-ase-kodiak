@@ -383,8 +383,8 @@ class Vasp(FileIOCalculator, object):
         # it will reset the calculator and cause a calculation to be
         # run if needed.
         # self.set(**kwargs)
-        # changed_params = self.set(**kwargs) # temp - EPB
-        changed_params = self.set(kwargs) # temp - EPB
+        changed_params = self.set(**kwargs) # temp - EPB
+        # changed_params = self.set(kwargs) # temp - EPB
 
         ''' Let's print the self.parameters dictionary after self.set(**kwargs)'''
         with open('ts_data_EPB.txt', 'a') as tempText:
