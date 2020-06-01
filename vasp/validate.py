@@ -107,9 +107,9 @@ def gamma(calc, val):
 def gga(calc, val):
     """GGA sets the xc functional. (string)
 
-    https://cms.mpi.univie.ac.at/vasp/vasp/GGA_tag.html
+    https://www.vasp.at/wiki/index.php/GGA
     """
-    assert isinstance(val, str), '{} is a {}'.format(val, type(val))
+    assert isinstance(val, str), '{0} is a {1}'.format(val, type(val))
     assert val in ['91', 'PE', 'RP', 'AM', 'PS',
                    # these are apparently undocumented
                    # see vasp.Vasp.xc_defaults

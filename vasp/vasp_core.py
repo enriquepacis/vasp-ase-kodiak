@@ -96,7 +96,7 @@ class Vasp(FileIOCalculator, object):
     # set the relevant vasp tags.
     xc_defaults = {'lda': {'pp': 'LDA'},
                    # GGAs
-                   'gga': {'pp': 'GGA'},
+                   'gga': {'pp': 'LDA'}, # {'pp': 'GGA'} # only have {LDA, PBE}
                    'pbe': {'pp': 'PBE'},
                    'revpbe': {'pp': 'LDA', 'gga': 'RE'},
                    'rpbe': {'pp': 'LDA', 'gga': 'RP'},
@@ -226,7 +226,35 @@ class Vasp(FileIOCalculator, object):
                       'O':{'L':-1, 'U':0.0, 'J':0.0}},
 
         """
-        self.kwargs = kwargs
+        self.kwargs = kwargs # attach kwargs to self for access in FileIOCalculator
+
+        # VVV ------ temp - EPB ------ VVV
+        """
+        I'm not really sure how to use the logger and how to view the logs yet,
+        but this allows me to see what's going on.
+        """
+        with open('ts_data_EPB.txt', 'w') as tempTxt:
+            tempTxt.write('Keyword arguments:\n') 
+            # tempTxt.write(kwargs)
+            for temp_key in kwargs:
+                temp_val = kwargs[temp_key]
+                tempTxt.write(f"  kwargs['{temp_key}'] = {temp_val}\n")
+        """
+        When I examine the output, I find that the right value appears to pass
+        in for the 'gga' keyword argument. Somewhere between here and line
+        the validation (if VASPRC['validate']: ...), the self.parameters['gga']
+        gets set to None. I suspect it's in the ase/calculators/vasp/vasp.py,
+        
+        """
+
+        ''' Let's print the original kwargs dictionary'''
+        with open('ts_data_EPB.txt', 'w') as tempText:
+            tempText.write('\nOriginal kwargs:\n')
+            for k1 in kwargs.keys():
+                v1 = kwargs[k1]
+                tempText.write(f"  kwargs['{k1}'] = {v1}\n")
+
+        # ^^^ ------ temp - EPB ------ ^^^
 
         # set first so self.directory is right
         self.set_label(label)
@@ -255,6 +283,15 @@ class Vasp(FileIOCalculator, object):
         if atoms is not None and self.neb is None:
             self.atoms = atoms
 
+        ''' I added this for troubleshooting - EPB '''
+        with open('ts_data_EPB.txt', 'a') as tempText:
+            tempText.write('\nself properties before FileIOCalculator.__init__:\n')
+            tempText.write
+            for k1 in self.__dict__.keys():
+                v1 = self.__dict__[k1]
+                tempText.write(f"  self.{k1} = {v1}\n")
+
+        
         # We do not pass kwargs here. Some of the special kwargs
         # cannot be set at this point since they need to know about
         # the atoms and parameters. This reads params and results from
@@ -269,11 +306,42 @@ class Vasp(FileIOCalculator, object):
         # The calculator should be up to date with the file
         # system here.
 
-        # Add default parameters if they aren't set otherwise.
 
+        ''' I added this for troubleshooting - EPB '''
+        with open('ts_data_EPB.txt', 'a') as tempText:
+            tempText.write('\nself properties after FileIOCalculator.__init__:\n')
+            for k1 in self.__dict__.keys():
+                v1 = self.__dict__[k1]
+                tempText.write(f"  self.{k1} = {v1}\n")#; value = '{v1}'\n")
+
+        # ''' Let's print the self.parameters dictionary with its default values'''
+        # with open('ts_data_EPB.txt', 'a') as tempText:
+        #     tempText.write('\nself.parameters list:\n')
+        #     for k1 in self.parameters:
+        #         v1 = self.parameters[k1]
+        #        tempText.write(f"  self.parameters['{k1}'] = {v1}\n")#; value = '{v1}'\n")
+
+        # Add default parameters if they aren't set otherwise.
         for key, val in Vasp.default_parameters.items():
             if key not in kwargs and key not in self.parameters:
                 kwargs[key] = val
+
+        '''
+        There is no special handling here for the 'gga' keyword argument.
+        should there be? - EPB
+        'gga' is not in Vasp.default_parameters, so it wasn't added to self.parameters
+
+        Since kwargs are manipulated here, let's see what they are before updating
+        kwargs with the special dictionaires.
+        '''
+
+        with open('ts_data_EPB.txt', 'a') as tempTxt:
+            tempTxt.write('\nKeyword arguments before special update:\n') 
+            # tempTxt.write(kwargs)
+            for temp_key in kwargs:
+                temp_val = kwargs[temp_key]
+                tempTxt.write(f"  kwargs['{temp_key}'] = {temp_val}\n")
+
 
         # Next we update kwargs with the special kwarg
         # dictionaries. ispin, rwigs are special, and needs sorted
@@ -290,10 +358,48 @@ class Vasp(FileIOCalculator, object):
         else:
             ldau_luj = None
 
+        ''' Let's print the self.parameters dictionary before self.set(**kwargs)'''
+        with open('ts_data_EPB.txt', 'a') as tempText:
+            tempText.write('\nself.parameters list before self.set(**kwargs):\n')
+            for k1 in self.parameters:
+                v1 = self.parameters[k1]
+                tempText.write(f"  self.parameters['{k1}'] = {v1}\n")#; value = '{v1}'\n")
+
+        ''' Let's print the kwargs dictionary before self.set(**kwargs)'''
+        with open('ts_data_EPB.txt', 'a') as tempText:
+            tempText.write('\nkwargs before self.set(**kwargs):\n')
+            for k1 in kwargs.keys():
+                v1 = kwargs[k1]
+                tempText.write(f"  kwargs['{k1}'] = {v1}\n")#; value = '{v1}'\n")
+
+        #with open('ts_data_EPB.txt', 'a') as tempText:
+        #    tempText.write('\n**kwargs before self.set(**kwargs):\n')
+        #    for k1 in **kwargs.keys():
+        #        v1 = **kwargs[k1]
+        #        tempText.write(f"  **kwargs['{k1}'] = {v1}\n")#; value = '{v1}'\n")
+
+
         # Now update the parameters. If there are any new kwargs here,
         # it will reset the calculator and cause a calculation to be
         # run if needed.
-        self.set(**kwargs)
+        # self.set(**kwargs)
+        # changed_params = self.set(**kwargs) # temp - EPB
+        changed_params = self.set(kwargs) # temp - EPB
+
+        ''' Let's print the self.parameters dictionary after self.set(**kwargs)'''
+        with open('ts_data_EPB.txt', 'a') as tempText:
+            
+            tempText.write('\nchanged_params from self.set(**kwargs):\n')
+            for k1 in changed_params:
+                v1 = changed_params[k1]
+                tempText.write(f"  changed_params['{k1}'] = {v1}\n")#; value = '{v1}'\n")
+
+
+            tempText.write('\nself.parameters list after self.set(**kwargs):\n')
+            for k1 in self.parameters:
+                v1 = self.parameters[k1]
+                tempText.write(f"  self.parameters['{k1}'] = {v1}\n")#; value = '{v1}'\n")
+
 
         # In case no atoms was on file, and one is passed in, we set
         # it here.
@@ -320,6 +426,16 @@ class Vasp(FileIOCalculator, object):
         if VASPRC['validate']:
             for key, val in self.parameters.items():
                 if key in validate.__dict__:
+
+                    # VVV --- temp troubleshooting code - EPB --- VVV
+                    # self_type = type(self)
+                    # trouble_str = f"self is a {self_type}; key = '{key}'; val = {val}" # temp - EPB
+                    # item_str = 'Vasp parameters:\n'
+                    # for mykey, myval in self.parameters.items():
+                    #     item_str += f'   {mykey}: {myval}\n'
+                    # assert val is not None, item_str # trouble_str
+                    # ^^^ --- temp troubleshooting code - EPB --- ^^^
+
                     f = validate.__dict__[key]
                     f(self, val)
                 else:
