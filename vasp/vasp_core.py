@@ -119,6 +119,7 @@ class Vasp(FileIOCalculator, object):
                                'aggac': 0.0, 'zab_vdw': -1.8867},
                    'beef-vdw': {'pp': 'PBE', 'gga': 'BF', 'luse_vdw': True,
                                 'zab_vdw': -1.8867, 'lbeefens': True},
+                   'vdw-dft-d3': {'pp': 'PBE', 'gga': 'PE'},
                    # hybrids
                    'pbe0': {'pp': 'LDA', 'gga': 'PE', 'lhfcalc': True},
                    'hse03': {'pp': 'LDA', 'gga': 'PE', 'lhfcalc': True,
@@ -383,7 +384,18 @@ class Vasp(FileIOCalculator, object):
         # it will reset the calculator and cause a calculation to be
         # run if needed.
         # self.set(**kwargs)
+
+        # ============================================================
+        # ========================vvv TROUBLE vvv=====================
+        # There's a problem here when I provide a 'gga' kwarg.
+        # It seems that ase.calculators.calculator.py defines set,
+        # and set changes 
+        # ============================================================
         changed_params = self.set(**kwargs) # temp - EPB
+        # ============================================================
+        # ========================^^^ TROUBLE ^^^=====================
+        # ============================================================
+
         # changed_params = self.set(kwargs) # temp - EPB
 
         ''' Let's print the self.parameters dictionary after self.set(**kwargs)'''
@@ -422,18 +434,28 @@ class Vasp(FileIOCalculator, object):
         if ldau_luj is not None:
             self.set(**self.set_ldau_luj_dict(ldau_luj))
 
+        # VVV --- temp troubleshooting code - EPB --- VVV
+        with open('ts_data_EPB.txt', 'a') as tempText:
+            tempText.write('SELF is a {0}'.format(type(self)) )
+
+
         # Finally run validate functions
         if VASPRC['validate']:
             for key, val in self.parameters.items():
                 if key in validate.__dict__:
 
                     # VVV --- temp troubleshooting code - EPB --- VVV
+                    # with open('ts_data_EPB.txt', 'a') as tempText:
+                    #    tempText.write('\n   **validating key = "{key}"')
+                    #    for k1 in kwargs.keys():
+                    #        v1 = kwargs[k1]
+                    #        tempText.write(f"       **kwargs['{k1}'] = {v1}\n")#; value = '{v1}'\n")
                     # self_type = type(self)
                     # trouble_str = f"self is a {self_type}; key = '{key}'; val = {val}" # temp - EPB
-                    # item_str = 'Vasp parameters:\n'
-                    # for mykey, myval in self.parameters.items():
-                    #     item_str += f'   {mykey}: {myval}\n'
-                    # assert val is not None, item_str # trouble_str
+                    item_str = '   Vasp parameters:\n'
+                    for mykey, myval in self.parameters.items():
+                        item_str += f'      {mykey}: {myval}\n'
+                    assert val is not None, item_str # trouble_str
                     # ^^^ --- temp troubleshooting code - EPB --- ^^^
 
                     f = validate.__dict__[key]
@@ -449,6 +471,65 @@ class Vasp(FileIOCalculator, object):
         self.run = self._run
         self.abort = self._abort
         self.wait = self._wait
+
+    '''
+       Added by EPB - 2020.06.11 - I'm attempting to override the
+       ase.calculators.calculator.set() method so I can set the gga tag.
+
+       vvvvvv
+    '''
+    def my_set(self, **kwargs):
+        """Set parameters like set(key1=value1, key2=value2, ...).
+
+        A dictionary containing the parameters that have been changed
+        is returned.
+
+        Subclasses must implement a set() method that will look at the
+        chaneged parameters and decide if a call to reset() is needed.
+        If the changed parameters are harmless, like a change in
+        verbosity, then there is no need to call reset().
+
+        The special keyword 'parameters' can be used to read
+        parameters from a file."""
+
+
+        from ase.calculators.calculator import equal
+
+        with open('ts_data_EPB.txt', 'a') as tempText:
+            tempText.write('\n Entering my Vasp.set() method. - EPB')
+
+
+        if 'parameters' in kwargs:
+            filename = kwargs.pop('parameters')
+            parameters = Parameters.read(filename)
+            parameters.update(kwargs)
+            kwargs = parameters
+
+        changed_parameters = {}
+
+        for key, value in kwargs.items():
+            oldvalue = self.parameters.get(key)
+            with open('ts_data_EPB.txt', 'a') as tempText:
+                tempText.write(f" self.parameters['{key}'] = {oldvalue}; new value = {value}\n")
+            if key not in self.parameters or not equal(value, oldvalue):
+                changed_parameters[key] = value
+                self.parameters[key] = value
+
+        if self.discard_results_on_any_change and changed_parameters:
+            self.reset()
+
+        with open('ts_data_EPB.txt', 'a') as tempText:
+            tempText.write('\n Exiting my Vasp.set() method. - EPB')
+
+        return changed_parameters
+
+    '''
+       ^^^^^^
+
+       Added by EPB - 2020.06.11 - I'm attempting to override the
+       ase.calculators.calculator.set() method so I can set the gga tag.
+    '''
+
 
     def sort_atoms(self, atoms=None):
         """Generate resort list, and make list of POTCARs to use.
@@ -928,6 +1009,7 @@ class Vasp(FileIOCalculator, object):
                         return Vasp.EMPTYCONTCAR
 
         return Vasp.UNKNOWN
+
 
     @property
     def potential_energy(self):

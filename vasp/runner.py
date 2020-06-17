@@ -140,9 +140,9 @@ def calculate(self, atoms=None, properties=['energy'],
             else:
                 # vanilla MPI run. multiprocessing does not work on more
                 # than one node, and you must specify in VASPRC to use it
-                if (VASPRC['queue.nodes'] > 1 or
-                    (VASPRC['queue.nodes'] == 1 and
-                     VASPRC['queue.ppn'] > 1 and
+                if ( int(VASPRC['queue.nodes']) > 1 or
+                    ( int(VASPRC['queue.nodes']) == 1 and
+                      int(VASPRC['queue.ppn']) > 1 and
                      (VASPRC['multiprocessing.cores_per_process'] ==
                       'None'))):
                     s = 'queue.nodes = {0}'.format(VASPRC['queue.nodes'])
@@ -155,7 +155,7 @@ def calculate(self, atoms=None, properties=['energy'],
 
                     log.debug('MPI NPROCS = {}'.format(NPROCS))
                     vaspcmd = VASPRC['vasp.executable.parallel']
-                    parcmd = 'mpirun -np %i %s' % (NPROCS, vaspcmd)
+                    parcmd = 'mpiexec -np %i %s' % (NPROCS, vaspcmd)
                     exitcode = os.system(parcmd)
                     return exitcode
                 else:
@@ -169,7 +169,7 @@ def calculate(self, atoms=None, properties=['energy'],
                         NPROCS = VASPRC['multiprocessing.cores_per_process']
 
                         vaspcmd = VASPRC['vasp.executable.parallel']
-                        parcmd = 'mpirun -np %i %s' % (NPROCS, vaspcmd)
+                        parcmd = 'mpiexec -np %i %s' % (NPROCS, vaspcmd)
                         exitcode = os.system(parcmd)
                         return exitcode
         else:
