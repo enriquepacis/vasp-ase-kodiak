@@ -440,11 +440,12 @@ Found 10 k-points in IBZKPT.
 ERROR: System is metallic!
 
 
-#+caption: Hybrid band structure plot.
-[[./images/Si-hybrid-bands.pdf]]
-
 sumo-bandstats did not find a band gap.
 #+end_example
+
+#+attr: :width 3in
+#+caption: Hybrid band structure plot.
+[[./images/Si-hybrid-bands.pdf]]
 
 
 ** A functional approach to calculations
