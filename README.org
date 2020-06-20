@@ -300,7 +300,7 @@ if p is None:
 else:
     figname = 'images/Si-fcc-bandstructure_diamond.png'
     p.savefig(figname)
-    print(f'\n#+comment Band structure for diamond Si crystal.\n[[./{figname}]]\n')
+    print(f'\n#+caption: Band structure for diamond Si crystal.\n[[./{figname}]]\n')
 
     # Create a band structure plot using sumo-bandplot
     banddir = os.path.join(jobdir, 'bandstructure')
@@ -324,7 +324,7 @@ forces = (eV/ang)
  [[-0. -0. -0.]
  [ 0.  0.  0.]]
 
-#+comment Band structure for diamond Si crystal.
+#+caption: Band structure for diamond Si crystal.
 [[./images/Si-fcc-bandstructure_diamond.png]]
 
 band structure plot:
@@ -332,7 +332,7 @@ band structure plot:
 #+end_example
 
 #+attr: :width 3in
-#+comment Band structure for diamond Si crystal.
+#+caption: Band structure for diamond Si crystal.
 [[./images/Si-fcc-bandstructure_diamond.png]]
 
 *** Silicon Band Structure - Hybrid
