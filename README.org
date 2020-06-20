@@ -331,7 +331,9 @@ band structure plot:
  /ion/home/blaire/materials/vasp/jtc-vasp-py3/images/Si-bands-DFT.pdf
 #+end_example
 
-
+#+attr: :width 3in
+#+comment Band structure for diamond Si crystal.
+[[./images/Si-fcc-bandstructure_diamond.png]]
 
 *** Silicon Band Structure - Hybrid
 This gives a better estimate of the band gap, but hybrid calculations are more expensive than DFT calculations.
