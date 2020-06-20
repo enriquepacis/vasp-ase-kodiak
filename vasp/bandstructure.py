@@ -3,7 +3,8 @@ from .vasp import Vasp
 from .monkeypatch import monkeypatch_class
 from ase.dft import DOS
 
-import os, subprocess
+import os, shutil
+import subprocess as sp
 import numpy as np
 # subprocess is used in my "hack" for get_bandstructure_v02
 
@@ -65,6 +66,30 @@ def get_bandstructure(self,
 
     else: # I don't think this will work unless the calculation is complete!
 
+        # In the fol
+        archiveKpts = os.path.join(wd, 'KPOINTS_old')
+        originalKpts = os.path.join(wd, 'KPOINTS')
+        if not os.path.exists(archiveKpts): # archive the original KPOINTS file
+            shutil.copy(originalKpts, archiveKpts)
+
+        with open(archiveKpts, 'r') as kpts_infile: # get lines of old KPOINTS
+            KPtsLines = kpts_infile.readlines()
+
+        # Append labels for high-symmetry points to lines of the KPOINTS file
+        reject_chars = '$'
+        for idx, label in enumerate(labels):
+            newlabel = label
+            for ch in reject_chars:
+              newlabel = newlabel.replace(ch, '')
+
+            KPtsLines[4+idx] = KPtsLines[4+idx][:-1] + f' ! {newlabel}\n'
+
+        # Write a new version of the k-points file
+        with open(originalKpts, 'w') as kpts_outfile:
+            for line in KPtsLines:
+                kpts_outfile.write(line)
+            
+        # This is John Kitchin's original band structure visualization
         fig = plt.figure()
         with open(os.path.join(wd, 'EIGENVAL')) as f:
             # skip 5 lines
@@ -122,11 +147,14 @@ def get_bandstructure(self,
         return (npoints, band_energies, fig)
 
 
+
 @monkeypatch_class(Vasp)
 def get_bandstructure_v02(self,
-                      kpts_path=None,
-                      kpts_nintersections=None,
-                      show=False):
+                          kpts_path=None,
+                          kpts_nintersections=None,
+                          show=False,
+                          outdir=None,
+                          outfile=None):
     """Calculate a hybrid band structure along :param kpts_path:
     :param list kpts_path: list of tuples of (label, k-point) to
       calculate path on.
@@ -140,22 +168,24 @@ def get_bandstructure_v02(self,
     https://www.vasp.at/wiki/index.php/Si_bandstructure#Procedure_2:_0-weight_.28Fake.29_SC_procedure_.28PBE_.26_Hybrids.29
     """
 
-    print('Commencing the hybrid caluclation procedure.')
-
     """
-    Our first job will be to copy the working directory to a subdirectory
+    Our first job will be to copy the working directory to a subdirectory.
+    This will happen on the first invocation of get_bandstructure_v02()
     """
 
     self.update()
     self.stop_if(self.potential_energy is None)
 
-    kpts = [k[1] for k in kpts_path]
-    labels = [k[0] for k in kpts_path]
+    kx, ky, kz, labels, label_idx = interpolate_kpath(kpts_path,
+                                                      kpts_nintersections)
+    
+    num_new_k_points = len(kx)
 
-    # Calculate the zero-weight k-points
+    '''
     kx = np.linspace(kpts[0][0], kpts[1][0], kpts_nintersections)
     ky = np.linspace(kpts[0][1], kpts[1][1], kpts_nintersections)
     kz = np.linspace(kpts[0][2], kpts[1][2], kpts_nintersections)
+    '''
 
     dos = DOS(self, width=0.2)
     d = dos.get_dos()
@@ -171,6 +201,8 @@ def get_bandstructure_v02(self,
 
     if not os.path.exists(wd):
         # I think: clone works if no subsequent calcs have been run
+        # This branch should be taken on the first invocation of
+        # get_bandstructure_v02
         self.clone(wd)
                       
         # I think: Vasp() works if no subsequent calcs have been run
@@ -186,30 +218,36 @@ def get_bandstructure_v02(self,
         discussed: https://youtu.be/OQhRYzWAGfk?t=2389
         - These points correspond to positions along the k-point path we desire
         '''
+
+        # Deleting the old KPOINTS file is probably a bad thing
+        # old_kpts = os.path.join( calc.directory, 'KPOINTS')
+        # os.remove(old_kpts)
+
+        # Read the automatically-generated k-points from IBZKPT
         IBZKPT = os.path.join( calc.directory, 'IBZKPT' ) 
         with open(IBZKPT, 'rt') as infile:
             infile.readline()
             nk_old = int(infile.readline().split()[0])
             # print(nk_old)
             print(f'Found {nk_old} k-points in IBZKPT.')
-            print(f'There are {kpts_nintersections} additional zero-weight k-points.')
+            print(f'There are {num_new_k_points} additional zero-weight k-points.')
             print('Reading the original k-points...')
             original_k_lines = []
             for idx in range(0, nk_old+1):
                 original_k_lines.append(infile.readline())
             # print(': {0}'.format(original_k_lines[idx])) 
 
-        total_k_points = nk_old + kpts_nintersections
+        total_k_points = nk_old + num_new_k_points
         
         print(f'There are a total of {total_k_points} k-points.')
 
-        # Make lines for the original k-points
+        # Obtain text lines for the original k-points
         HSE_lines = ['Explicit k-point list\n', ' '*6 + f'{total_k_points}\n']
         for line in original_k_lines:
             HSE_lines.append(line)
 
-        # Make lines for the new k points
-        for idx in range(0, kpts_nintersections):
+        # Make text lines for the new k points
+        for idx in range(0, num_new_k_points):
             line_str = '{0:15.12f} {1:15.12f} {2:15.12f} 0.0\n'.format(kx[idx],
                                                                        ky[idx],
                                                                        kz[idx])
@@ -219,10 +257,10 @@ def get_bandstructure_v02(self,
         #    print(line)
         
         # Write the 'KPOINTS_HSE_bands' file
-        tgt = os.path.join(calc.directory, 'KPOINTS_HSE_bands')
-        with open(tgt, 'w') as outfile:
+        tgt = os.path.join(calc.directory, 'KPOINTS')# 'KPOINTS_HSE_bands')
+        with open(tgt, 'w') as KPTSfile:
             for line in HSE_lines:
-                outfile.write(line)
+                KPTSfile.write(line)
 
         """
         Refer to:
@@ -291,101 +329,185 @@ runvasp.py     # this is the vasp command
                                                      VASPRC['queue.ppn']),
                     '-l', 'mem={0}'.format(VASPRC['queue.mem']),
                     '-M', VASPRC['user.email']]
-        p = subprocess.Popen(cmdlist,
-                             stdin=subprocess.PIPE,
-                             stdout=subprocess.PIPE,
-                             stderr=subprocess.PIPE,
-                             universal_newlines=True)
+        p = sp.Popen(cmdlist,
+                     stdin=sp.PIPE,
+                     stdout=sp.PIPE,
+                     stderr=sp.PIPE,
+                     universal_newlines=True)
 
-        out, err = p.communicate(script)         
+        out, err = p.communicate(script)
 
-    """
-    calc.set(nsw=0,  # no ionic updates required
-       isif=None,
-       ibrion=None,
-       icharg=11,
-                 )
-    """
-    return None, None, None
+        return None
+
+    else:
+        """
+        This should happen on the second invocation of get_bandstructure_v02.
+        Here, we will add labels for the zero-weight k-points.
+        """
+
+        # Read the automatically-generated k-points from IBZKPT
+        IBZKPT = os.path.join( wd, 'IBZKPT' ) 
+        with open(IBZKPT, 'rt') as infile:
+            infile.readline()
+            nk_old = int(infile.readline().split()[0])
+            # print(nk_old)
+            print(f'Found {nk_old} k-points in IBZKPT.')
+
+        kx, ky, kz, spec_k_labels, label_idx = interpolate_kpath(kpts_path,
+                                                                 kpts_nintersections)
+
+        num_new_k_points = len(kx)
+
+        import shutil
+
+        archive_KPOINTS = os.path.join(wd, 'KPOINTS_original')
+        if not os.path.exists(archive_KPOINTS):
+            shutil.copy(os.path.join(wd, 'KPOINTS'),
+                        archive_KPOINTS)
+
+        with open(archive_KPOINTS, 'r') as infile:
+            KPTS_Lines  = infile.readlines()
+
+        for idx, label in enumerate(spec_k_labels):
+            label = label.replace('$', '')
+            newk_idx = label_idx[idx]
+            line_with_label = KPTS_Lines[3+nk_old+newk_idx][:-1] + f' {label}\n'
+            KPTS_Lines[3+nk_old+newk_idx] = line_with_label
+
+        with open(os.path.join(wd, 'KPOINTS'), 'w') as KPOINTSfile:
+            for line in KPTS_Lines:
+                KPOINTSfile.write(line)
+
+
+        # Run sumo-bandplot, if it exists
+        check_sumo = sp.run(['which', 'sumo-bandplot'], capture_output=True)
+        found_sumo = not check_sumo.stdout == b''
+        found_band_data = os.path.exists(os.path.join(wd, 'vasprun.xml'))
+
+
+        if found_sumo and found_band_data:
+            os.chdir(wd)
+            sumo_cmd = ['sumo-bandplot']
+            run_sumo = sp.run(sumo_cmd, capture_output=True)
+            if outfile is not None:
+                shutil.copy('band.pdf', outfile)
+            else:
+                outfile = 'band.pdf'
+            if outdir is not None:
+                target = os.path.join(outdir, outfile)
+                shutil.copy(outfile, target)
+            else:
+                target = os.path.join(os.getcwd(), outfile)
+
+            Egap, Ecbm, Evbm = read_bandstats()
+            
+        else:
+            print('sumo-bandplot not found. No band plot generated.')
+            target = None
+            Egap, Ecbm, Evbm = None, None, None
+
+
+    return {'file': target, 'Egap': Egap,
+            'Ecbm': Ecbm, 'Evbm': Evbm}
+
+
+def interpolate_kpath(kpts_path, kpts_nintersections=10):
+    '''
+    This obtains k-points from a k-point path specified by several end-points.
+    Points are interpolated along the path.
+    '''
+
+    kpts = [k[1] for k in kpts_path]
+    labels = [k[0] for k in kpts_path]
+
+    # Calculate the zero-weight k-points
+    num_segments = int(len(kpts_path)/2)
+    label_idx = []
+    reduced_labels = []
+    for seg_idx in range(0, num_segments):
+        # print('Analyzing segment {0} of {1}'.format(seg_idx+1, num_segments) )
+        ki, kf = kpts[2*seg_idx], kpts[2*seg_idx + 1]
+
+        if len(kpts_path[2*seg_idx]) == 3:
+            nk = kpts_path[2*seg_idx][2]
+        else:
+            nk = kpts_nintersections
+
+        # Interpolate points for each segment of the k-point path
+        segx = np.linspace(ki[0], kf[0], nk)
+        segy = np.linspace(ki[1], kf[1], nk)
+        segz = np.linspace(ki[2], kf[2], nk)
+
+        # handle the first segment as a special case
+        if seg_idx == 0:
+            kx, ky, kz = segx, segy, segz
+            num_new_k_points = nk
+            label_idx = [0, num_new_k_points -1]
+            reduced_labels = [labels[0], labels[1]]
+            points_added = nk
+        else:
+            # In this case, the new segment start conincides with the last
+            #    segment ending point. We discard the new segment start
+            if labels[2*seg_idx] == labels[2*seg_idx-1]:
+                seg_points = nk - 1
+                kx = np.append(kx, segx[1:])
+                ky = np.append(ky, segy[1:])
+                kz = np.append(kz, segz[1:])
+                num_new_k_points += seg_points
+                # Add index for new segment end point
+                label_idx.append( num_new_k_points-1 )
+                # Add label for new segment end point
+                reduced_labels.append( labels[2*seg_idx+1] )
+
+            # In this case, the new segment start does not coincide with the
+            #    last segment ending point. We do not discard the new segment
+            #    start
     
 
-    '''
-    # run in non-selfconsistent directory
-
-    wd = os.path.join(self.directory, 'bandstructure')
-
-    if not os.path.exists(wd):
-        self.clone(wd)
-
-        calc = Vasp(wd)
-        calc.set(kpts=kpts,
-                 kpts_nintersections=kpts_nintersections,
-                 reciprocal=True,
-                 nsw=0,  # no ionic updates required
-                 isif=None,
-                 ibrion=None,
-                 icharg=11)
-
-        calc.update()
-
-        if calc.potential_energy is None:
-            return None, None, None
-
-    else: # I don't think this will work unless the calculation is complete!
-
-        fig = plt.figure()
-        with open(os.path.join(wd, 'EIGENVAL')) as f:
-            # skip 5 lines
-            f.readline()
-            f.readline()
-            f.readline()
-            f.readline()
-            f.readline()
-            unknown, npoints, nbands = [int(x) for x in f.readline().split()]
-
-            f.readline()  # skip line
-            
-            band_energies = [[] for i in range(nbands)]
-
-            for i in range(npoints):
-                x, y, z, weight = [float(x) for x in f.readline().split()]
-
-                for j in range(nbands):
-                    fields = f.readline().split()
-                    id, energy = int(fields[0]), float(fields[1])
-                    band_energies[id - 1].append(energy)
-                f.readline()  # skip line
-
-        ax1 = plt.subplot(121)
-        for i in range(nbands):
-            plt.plot(list(range(npoints)), np.array(band_energies[i]) - ef)
-
-        ax = plt.gca()
-        ax.set_xticks([])  # no tick marks
-        plt.xlabel('k-vector')
-        plt.ylabel('Energy (eV)')
-
-        nticks = len(labels) / 2 + 1
-        ax.set_xticks(np.linspace(0, npoints, nticks))
-        L = []
-        L.append(labels[0])
-        for i in range(2, len(labels)):
-            if i % 2 == 0:
-                L.append(labels[i])
             else:
-                pass
-        L.append(labels[-1])
-        ax.set_xticklabels(L)
-        plt.axhline(0, c='r')
+                seg_points = nk
+                kx = np.append(kx, segx)
+                ky = np.append(ky, segy)
+                kz = np.append(kz, segz)
+                # Add index for new segment start point
+                label_idx.append( num_new_k_points )
+                # Add label for new segment starting point
+                reduced_labels.append( labels[2*seg_idx] )
+                num_new_k_points += seg_points
+                # Add index for new segment end point
+                label_idx.append( num_new_k_points - 1 )
+                # Add label for new segment end point
+                reduced_labels.append( labels[2*seg_idx+1] )
+        
+    # print(f'There a total of {num_new_k_points} points in the path.')
 
-        plt.subplot(122, sharey=ax1)
-        plt.plot(d, e)
-        plt.axhline(0, c='r')
-        plt.ylabel('energy (eV)')
-        plt.xlabel('DOS')
+    return kx, ky, kz, reduced_labels, label_idx
 
-        plt.subplots_adjust(wspace=0.26)
-        if show:
-            plt.show()
-        return (npoints, band_energies, fig)
-    '''
+
+def read_bandstats():
+   """
+   Uses sumo-bandstats to obtain the band gap, valence band minimum, and
+   valence band maximum.
+   """
+
+   read_stats = sp.run(['sumo-bandstats'], capture_output=True)
+   
+   # It's not right that we get data from stderr. It should be stdout.
+   # This is a bug in sumo 1.10 (https://sumo.readthedocs.io/en/latest/sumo-bandplot.html)
+   statlines = read_stats.stderr.decode(encoding='UTF-8').split('\n')
+   for line in statlines:
+      print(line)
+
+   if len(statlines) > 5:
+       Evbm = float(list(filter(None, statlines[6].split(' ')))[1])
+       Ecbm = float(list(filter(None, statlines[13].split(' ')))[1])
+
+       Egap = Ecbm - Evbm
+
+   else:
+       Egap, Evbm, Ecbm = None, None, None
+
+   # ef = '7.3f'
+   # print(f'Gap = {Egap:{ef}} eV; Ecbm = {Ecbm:{ef}} eV; Evbm = {Evbm:{ef}} eV')
+
+   return Egap, Ecbm, Evbm

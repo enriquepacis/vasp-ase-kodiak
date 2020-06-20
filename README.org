@@ -96,15 +96,13 @@ on Baylor's Kodiak HPC cluster, PBS system, and Python 3.7.2+.
    queue.ppn = 8
    queue.nprocs = 4
    queue.mem = 2G
-   queue.jobname = None
+   queue.jobname = DefaultJob
    queue.q = batch
    queue.pe = mpi
-   vdw_kernel.bindat = /afs/crc.nd.edu/x86_64_linux/vasp/5.3.5/ompi1.6.3/vdw_kernel.bindat
+   vdw_kernel.bindat = /ion/home/blaire/materials/vasp/vdw_kernel.bindat
    #+END_SRC
    Notes:
-   1. At this time, I haven't used the =vdw_kernel.bindat= data file. We can
-      download it from the VASP user portal if we need it, and we can then
-      point the =vdw_kernel.bindat= variable to this location.
+   1. I downloaded =vdw_kernel.bindat= and saved it in my personal space. You can do the same, or point your =.vasprc= to the location of a common =vdw_kernel.bindat=. At the moment, I don't think Baylor has a common =vdw_kernel.bindat=.
 
 
 * Differences from ase.calculators.vasp
@@ -224,6 +222,230 @@ print(co.get_forces())
 : energy = -14.69111507 eV
 : [[ 5.09138064  0.          0.        ]
 :  [-5.09138064  0.          0.        ]]
+
+** Band Structure of Silicon
+Here, I show how to obtain the band structure from a silicon (diamond crystal) unit cell. I show two methods: first, the simple DFT method, which is known to underestimate the band gap. Second, I use a hybrid functional which goes to a higher-level of theory.
+
+*** Silicon Band Structure - DFT
+
+This script requires two or three runs to obtain all the output:
+1. Peform the self-consistent calculation
+2. Perform the non-self-consistent calculation
+3. Post-process and visualize
+#+name: vasp-wiki-si-bands-pbe
+#+begin_src python :results output
+from ase.io import write
+from ase.build import bulk
+from vasp import Vasp
+import numpy as np
+import subprocess as sp
+import os
+from vasp.vasprc import VASPRC
+from pathlib import Path
+
+Path('images').mkdir(exist_ok=True) # create the 'images' directory as needed
+
+VASPRC['queue.q'] = 'batch'
+queue = VASPRC['queue.q']
+VASPRC['queue.nodes'] = 4
+VASPRC['queue.ppn'] = 4
+
+'''
+Step 1: Standard self-consistent run
+   See: [1] https://www.vasp.at/wiki/index.php/Si_bandstructure#Standard_self-consistent_.28SC.29_run
+'''
+atoms = bulk('Si', 'diamond', a=5.43)
+
+r = atoms.positions
+X = atoms.symbols
+for j, rj in enumerate(r):
+    print('{0}: ({1}, {2}, {3})'.format(X[j], rj[0], rj[1], rj[2]))
+
+homedir = os.getcwd()
+imgdir = os.path.join(homedir, 'images')
+jobdir = os.path.join('bulk', f'Si-bands-DFT')
+calc = Vasp(jobdir,  # output dir
+           xc='PBE',
+           kpts=[9, 9, 9],
+           encut= 240,
+           ismear=0, sigma=0.01,
+           lcharg=True,  # you need the charge density
+           lwave=True,   # and wavecar for the restart
+           gamma=[0,0,0],
+           atoms=atoms)
+
+e = calc.potential_energy
+calc.stop_if(e is None)
+
+print(f'The total energy is: {e:8.04f} eV')
+
+print('forces = (eV/ang)\n {0}'.format(atoms.get_forces()))
+
+'''
+This performs the Non-SC calculation with ICHARG=11
+See: https://www.vasp.at/wiki/index.php/Si_bandstructure#Standard_self-consistent_.28SC.29_run
+'''
+n, bands, p = calc.get_bandstructure(kpts_path=[('$L$', [0.5, 0.5, 0.5]),
+                                                (r'$\Gamma$', [0.0, 0.0, 0.0]),
+                                                (r'$\Gamma$', [0.0, 0.0, 0.0]),
+                                                ('$X$', [0.0, 0.5, 0.5]),
+                                                ('$X$', [0.0, 0.5, 0.5]),
+                                                ('$U$', [0.25, 0.625, 0.625]),
+                                                ('$K$', [0.375, 0.75, 0.375]),
+                                                (r'$\Gamma$', [0, 0, 0])],
+                                     kpts_nintersections=10)
+
+if p is None:
+    calc.abort()
+else:
+    figname = 'images/Si-fcc-bandstructure_diamond.png'
+    p.savefig(figname)
+    print(f'\n#+comment Band structure for diamond Si crystal.\n[[./{figname}]]\n')
+
+    # Create a band structure plot using sumo-bandplot
+    banddir = os.path.join(jobdir, 'bandstructure')
+    os.chdir(banddir)
+    sumo_cmdlist = ['sumo-bandplot', '-d', imgdir]
+    sp.Popen(sumo_cmdlist)
+
+    figname = os.path.join(imgdir, 'band.pdf')
+    figname2 = os.path.join(imgdir, 'Si-bands-DFT.pdf')
+    if os.path.exists(figname):
+       os.rename(figname, figname2)
+    print(f'band structure plot:\n {figname2}')
+#+end_src
+
+#+RESULTS: vasp-wiki-si-bands-pbe
+#+begin_example
+Si: (0.0, 0.0, 0.0)
+Si: (1.3575, 1.3575, 1.3575)
+The total energy is: -10.8179 eV
+forces = (eV/ang)
+ [[-0. -0. -0.]
+ [ 0.  0.  0.]]
+
+#+comment Band structure for diamond Si crystal.
+[[./images/Si-fcc-bandstructure_diamond.png]]
+
+band structure plot:
+ /ion/home/blaire/materials/vasp/jtc-vasp-py3/images/Si-bands-DFT.pdf
+#+end_example
+
+
+
+*** Silicon Band Structure - Hybrid
+This gives a better estimate of the band gap, but hybrid calculations are more expensive than DFT calculations.
+This script requires multiple evaluations for the full output.
+#+name: vasp-wiki-si-bands-hybrid
+#+begin_src python :results output
+from ase.io import write
+from ase.build import bulk
+from vasp import Vasp
+import numpy as np
+import subprocess as sp
+import os
+from vasp.vasprc import VASPRC
+from pathlib import Path
+
+Path('images').mkdir(exist_ok=True) # create the 'images' directory as needed
+
+VASPRC['queue.q'] = 'batch'
+queue = VASPRC['queue.q']
+VASPRC['queue.nodes'] = 8
+VASPRC['queue.ppn'] = 4
+
+'''
+Step 1: Standard self-consistent run
+   See: [1] https://www.vasp.at/wiki/index.php/Si_bandstructure#Standard_self-consistent_.28SC.29_run
+
+'''
+atoms = bulk('Si', 'diamond', a=5.43)
+
+r = atoms.positions
+X = atoms.symbols
+for j, rj in enumerate(r):
+    print('{0}: ({1}, {2}, {3})'.format(X[j], rj[0], rj[1], rj[2]))
+
+homedir = os.getcwd()
+imgdir = os.path.join(homedir, 'images')
+jobdir = os.path.join('bulk', f'Si-bands-hybrid')
+calc = Vasp(jobdir,  # output dir
+           xc='PBE',
+           kpts=[5, 5, 5],
+           encut= 240,
+           ismear=0, sigma=0.01,
+           lcharg=True,  # you need the charge density
+           lwave=True,   # and wavecar for the restart
+           gamma=[0,0,0],
+           atoms=atoms)
+
+e = calc.potential_energy
+calc.stop_if(e is None)
+
+print(f'The total energy is: {e:8.04f} eV')
+
+print('forces = (eV/ang)\n {0}'.format(atoms.get_forces()))
+
+'''
+This performs the hybrid calculation with modified KPOINTS file
+See: https://www.vasp.at/wiki/index.php/Si_bandstructure#Standard_self-consistent_.28SC.29_run
+'''
+
+# This shorter k-path yield a quicker result
+kpts_path = [('$L$', [0.5, 0.5, 0.5], 10),   # segment 1 start, with num points
+             (r'$\Gamma$', [0.0, 0.0, 0.0]),
+             (r'$\Gamma$', [0.0, 0.0, 0.0], 10), # segment 2 start
+             ('$X$', [0.0, 0.5, 0.5])]
+
+'''
+# For a much longer calculation, use this k-path
+kpts_path = [('$L$', [0.5, 0.5, 0.5], 10),   # segment 1 start, with num points
+             (r'$\Gamma$', [0.0, 0.0, 0.0]),
+             (r'$\Gamma$', [0.0, 0.0, 0.0], 10), # segment 2 start
+             ('$X$', [0.0, 0.5, 0.5]),
+             ('$X$', [0.0, 0.5, 0.5], 10),
+             ('$U$', [0.25, 0.625, 0.625]),
+             ('$K$', [0.375, 0.75, 0.375], 20),
+             (r'$\Gamma$', [0, 0, 0])]
+'''
+
+figname = 'Si-hybrid-bands.pdf'
+targetfile = os.path.join(imgdir, figname)
+BandData = calc.get_bandstructure_v02(kpts_path=kpts_path,
+                                       outfile=targetfile)
+
+if BandData['file'] is None:
+   print('No figure generated.')
+else:
+   fig = BandData['file']
+   Egap, Ecbm, Evbm = BandData['Egap'], BandData['Evbm'], BandData['Ecbm']
+   print(f'\n#+caption: Hybrid band structure plot.\n[[./images/{figname}]]\n')
+
+   if None not in [Egap, Ecbm, Evbm]:
+       print(f'Gap = {Egap:{ef}} eV; Ecbm = {Ecbm:{ef}} eV; Evbm = {Evbm:{ef}} eV')
+   else:
+       print('sumo-bandstats did not find a band gap.')
+
+#+end_src
+
+#+RESULTS: vasp-wiki-si-bands-hybrid
+#+begin_example
+Si: (0.0, 0.0, 0.0)
+Si: (1.3575, 1.3575, 1.3575)
+The total energy is: -10.7554 eV
+forces = (eV/ang)
+ [[ 0.  0.  0.]
+ [-0. -0. -0.]]
+Found 10 k-points in IBZKPT.
+ERROR: System is metallic!
+
+
+#+caption: Hybrid band structure plot.
+[[./images/Si-hybrid-bands.pdf]]
+
+sumo-bandstats did not find a band gap.
+#+end_example
+
 
 ** A functional approach to calculations
 
