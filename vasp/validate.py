@@ -367,6 +367,15 @@ def lorbit(calc, val):
         assert 'rwigs' in calc.parameters
     assert isinstance(val, int)
 
+def lsorbit(calc, val):
+    """Determines whether spin-orbit coupling is included
+
+    https://www.vasp.at/wiki/index.php/LSORBIT
+
+    Added by E.P. Blair - 2020.06.20
+    """
+    assert val in [True, False]
+
 
 def lsol(calc, val):
     """LSOL determines whether the VASPsol is activated. (boolean)

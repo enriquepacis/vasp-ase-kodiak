@@ -192,6 +192,13 @@ def calculate(self, atoms=None, properties=['energy'],
         # end
 
     # if you get here, a job is getting submitted
+
+    # Inspect the calculator for a 'lsorbit' key. If it's set to True,
+    #   then we need the non-collinear version of vasp, vasp_ncl
+    if self.parameters.get('lsorbit'):
+        runfile = 'runvasp_ncl.py'
+    else:
+        runfile = 'runvasp.py'
     CWD = os.getcwd()
     VASPDIR = self.directory
     module = VASPRC['module']
@@ -203,7 +210,7 @@ source ~/.bashrc # added by EPB - slight issue with "module load intel"
 cd {CWD}
 cd {VASPDIR}  # this is the vasp directory
 
-runvasp.py     # this is the vasp command
+{runfile}     # this is the vasp command
 #end""".format(**locals())
 
 

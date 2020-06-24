@@ -122,6 +122,219 @@ def get_bandstructure(self,
         plt.xlabel('k-vector')
         plt.ylabel('Energy (eV)')
 
+        nticks = int(len(labels) / 2 + 1)
+        ax.set_xticks(np.linspace(0, npoints, nticks))
+        L = []
+        L.append(labels[0])
+        for i in range(2, len(labels)):
+            if i % 2 == 0:
+                L.append(labels[i])
+            else:
+                pass
+        L.append(labels[-1])
+        ax.set_xticklabels(L)
+        plt.axhline(0, c='r')
+
+        plt.subplot(122, sharey=ax1)
+        plt.plot(d, e)
+        plt.axhline(0, c='r')
+        plt.ylabel('energy (eV)')
+        plt.xlabel('DOS')
+
+        plt.subplots_adjust(wspace=0.26)
+        if show:
+            plt.show()
+        return (npoints, band_energies, fig)
+
+@monkeypatch_class(Vasp)
+def get_supercell_bandstructure(self,
+                      kpts_path=None,
+                      kpts_nintersections=None,
+                      supercell_size=[1,1,1],
+                      unit_cell=[[1.0,0,0], [0,1.0,0], [0.0,0.0,0.0]],
+                      show=False):
+    """Calculate band structure along :param kpts_path:
+    :param list kpts_path: list of tuples of (label, k-point) to
+      calculate path on.
+    :param int kpts_nintersections: is the number of points between
+      points in band structures. More makes the bands smoother.
+    :param list supercell_size: this lists the size of the supercell
+      [nx ny nz] as multiples of the unit cell in the ordinal directions
+    :param list unit_cell: list of unit cell vectors
+
+    returns (npoints, band_energies, fighandle)
+
+    """
+    self.update()
+    self.stop_if(self.potential_energy is None)
+
+    M = [[1.0*supercell_size[0], 0.0, 0.0],
+         [0.0, 1.0*supercell_size[1], 0.0],
+         [0.0, 0.0, 1.0*supercell_size[2]]]
+
+    from unfold import find_K_from_k, make_kpath, removeDuplicateKpoints
+
+    uc_k_pts_bare = [ k[1] for k in kpts_path]
+    nseg = 30 # points per segment
+    kpath_uc = make_kpath(uc_k_pts_bare, nseg=nseg)
+    kpath_sc = []
+
+    for k_uc in kpath_uc:
+        k_sc, g = find_K_from_k(k_uc, M)
+        kpath_sc.append(np.append(k_sc, 1)) # add a weight to k_sc
+
+    reducedK = removeDuplicateKpoints(kpath_sc)
+
+    with open('temp_sc_klist.txt', 'w') as outfile:
+        for kpt_sc in kpath_sc:
+            outfile.write(str(kpt_sc))
+
+    labels = [k[0] for k in kpts_path]
+
+    dos = DOS(self, width=0.2)
+    d = dos.get_dos()
+    e = dos.get_energies()
+
+    ef = self.get_fermi_level()
+
+    # run in non-selfconsistent directory
+
+    wd = os.path.join(self.directory, 'bandstructure')
+
+    if not os.path.exists(wd):
+        self.clone(wd)
+
+        calc = Vasp(wd)
+        # don't set kpts_nintersections - avoid line mode
+        calc.set(kpts=reducedK,
+                 reciprocal=True,
+                 nsw=0,  # no ionic updates required
+                 isif=None,
+                 ibrion=None,
+                 icharg=11, lorbit=12)
+
+        
+        # calc.update()
+        # we'll just launch VASP - skip the calc.update()
+
+        # Create and run a subprocess that invokes 
+        CWD = os.getcwd()
+        VASPDIR = calc.directory
+        from .vasprc import VASPRC
+        module = VASPRC['module']
+        script = """#!/bin/bash
+module load {module}
+
+source ~/.bashrc # added by EPB - slight issue with "module load intel"
+
+cd {CWD}
+cd {VASPDIR}  # this is the vasp directory
+
+runvasp.py     # this is the vasp command
+#end""".format(**locals())
+
+        jobname = 'SCBands'
+        cmdlist = ['{0}'.format(VASPRC['queue.command'])]
+        cmdlist += ['-o', VASPDIR]
+        cmdlist += [option for option in VASPRC['queue.options'].split()]
+        cmdlist += ['-N', '{0}'.format(jobname),
+                    '-l', 'walltime={0}'.format(VASPRC['queue.walltime']),
+                    '-l', 'nodes={0}:ppn={1}'.format(VASPRC['queue.nodes'],
+                                                     VASPRC['queue.ppn']),
+                    '-l', 'mem={0}'.format(VASPRC['queue.mem']),
+                    '-M', VASPRC['user.email']]
+        p = sp.Popen(cmdlist,
+                     stdin=sp.PIPE,
+                     stdout=sp.PIPE,
+                     stderr=sp.PIPE,
+                     universal_newlines=True)
+
+        out, err = p.communicate(script)
+
+        return None, None, None
+
+
+
+        # if calc.potential_energy is None:
+        #    return None, None, None
+     
+
+    else: # I don't think this will work unless the calculation is complete!
+
+        os.chdir(wd)
+
+        from unfold import unfold
+
+        WaveSuper = unfold(M=M, wavecar='WAVECAR')
+        sw = WaveSuper.spectral_weight(kpath_uc)
+
+        from unfold import EBS_cmaps
+        e0, sf = WaveSuper.spectral_function(nedos=4000)
+        # or show the effective band structure with colormap
+        EBS_cmaps(kpath_sc, unit_cell, e0, sf, nseg=nseg,#  eref=-4.01,
+                  show=False) #,
+                  # ylim=(-3, 4))
+
+        plt.savefig('unfolded_bandstructure.png')
+
+
+        '''
+        # In the fol
+        archiveKpts = os.path.join(wd, 'KPOINTS_old')
+        originalKpts = os.path.join(wd, 'KPOINTS')
+        if not os.path.exists(archiveKpts): # archive the original KPOINTS file
+            shutil.copy(originalKpts, archiveKpts)
+
+        with open(archiveKpts, 'r') as kpts_infile: # get lines of old KPOINTS
+            KPtsLines = kpts_infile.readlines()
+
+        # Append labels for high-symmetry points to lines of the KPOINTS file
+        reject_chars = '$'
+        for idx, label in enumerate(labels):
+            newlabel = label
+            for ch in reject_chars:
+              newlabel = newlabel.replace(ch, '')
+
+            KPtsLines[4+idx] = KPtsLines[4+idx][:-1] + f' ! {newlabel}\n'
+
+        # Write a new version of the k-points file
+        with open(originalKpts, 'w') as kpts_outfile:
+            for line in KPtsLines:
+                kpts_outfile.write(line)
+    
+        # This is John Kitchin's original band structure visualization
+        fig = plt.figure()
+        with open(os.path.join(wd, 'EIGENVAL')) as f:
+            # skip 5 lines
+            f.readline()
+            f.readline()
+            f.readline()
+            f.readline()
+            f.readline()
+            unknown, npoints, nbands = [int(x) for x in f.readline().split()]
+
+            f.readline()  # skip line
+            
+            band_energies = [[] for i in range(nbands)]
+
+            for i in range(npoints):
+                x, y, z, weight = [float(x) for x in f.readline().split()]
+
+                for j in range(nbands):
+                    fields = f.readline().split()
+                    id, energy = int(fields[0]), float(fields[1])
+                    band_energies[id - 1].append(energy)
+                f.readline()  # skip line
+
+        ax1 = plt.subplot(121)
+        for i in range(nbands):
+            plt.plot(list(range(npoints)), np.array(band_energies[i]) - ef)
+
+        ax = plt.gca()
+        ax.set_xticks([])  # no tick marks
+        plt.xlabel('k-vector')
+        plt.ylabel('Energy (eV)')
+
         nticks = len(labels) / 2 + 1
         ax.set_xticks(np.linspace(0, npoints, nticks))
         L = []
@@ -145,6 +358,245 @@ def get_bandstructure(self,
         if show:
             plt.show()
         return (npoints, band_energies, fig)
+        '''
+
+
+@monkeypatch_class(Vasp)
+def get_supercell_bandstructure_ppc(self,
+                      kpts_path=None,
+                      kpts_nintersections=None,
+                      supercell_size=[1,1,1],
+                      unit_cell=[[1.0,0,0], [0,1.0,0], [0.0,0.0,0.0]],
+                      show=False):
+    """Calculate band structure along :param kpts_path:
+    :param list kpts_path: list of tuples of (label, k-point) to
+      calculate path on.
+    :param int kpts_nintersections: is the number of points between
+      points in band structures. More makes the bands smoother.
+    :param list supercell_size: this lists the size of the supercell
+      [nx ny nz] as multiples of the unit cell in the ordinal directions
+    :param list unit_cell: list of unit cell vectors
+
+    This version uses PyProcar for k-path preparation and unfolding.
+       See https://romerogroup.github.io/pyprocar/index.html
+
+    
+    
+    returns (npoints, band_energies, fighandle)
+
+    """
+    self.update()
+    self.stop_if(self.potential_energy is None)
+
+    M = [[1.0*supercell_size[0], 0.0, 0.0],
+         [0.0, 1.0*supercell_size[1], 0.0],
+         [0.0, 0.0, 1.0*supercell_size[2]]]
+
+
+    dos = DOS(self, width=0.2)
+    d = dos.get_dos()
+    e = dos.get_energies()
+
+    ef = self.get_fermi_level()
+
+    kpts = [k[1] for k in kpts_path]
+    labels = [k[0] for k in kpts_path]
+
+    # by now, the self-consistent calculation is complete
+    # run in non-selfconsistent directory
+    wd = os.path.join(self.directory, 'bandstructure')
+
+    if not os.path.exists(wd):
+        self.clone(wd)
+
+        calc = Vasp(wd)
+
+        # this next line actually writes a K-points file, but we're
+        # going to use pyprocar to overwrite it
+        calc.set(kpts=kpts, kpts_nintersections=10,
+                 reciprocal=True,
+                 nsw=0,  # no ionic updates required
+                 isif=None,
+                 ibrion=None,
+                 icharg=11, lorbit=12)
+
+        os.remove( os.path.join(wd, 'KPOINTS') )
+
+        # Let's try generating the default k-points path
+        # Now I need to learn how to set the k-path using pyprocar
+        #   see: 
+        import pyprocar as ppc
+        ppc.kpath(os.path.join(wd, 'POSCAR'),
+                  os.path.join(wd, 'KPOINTS'),
+                  supercell_matrix=np.diag( supercell_size ))
+        
+
+        # calc.update()
+        # we'll just launch VASP - skip the calc.update()
+
+        # Create and run a subprocess that invokes 
+        CWD = os.getcwd()
+        VASPDIR = calc.directory
+        from .vasprc import VASPRC
+        module = VASPRC['module']
+        script = """#!/bin/bash
+module load {module}
+
+source ~/.bashrc # added by EPB - slight issue with "module load intel"
+
+cd {CWD}
+cd {VASPDIR}  # this is the vasp directory
+
+runvasp.py     # this is the vasp command
+#end""".format(**locals())
+
+        jobname = 'SCBands'
+        cmdlist = ['{0}'.format(VASPRC['queue.command'])]
+        cmdlist += ['-o', VASPDIR]
+        cmdlist += [option for option in VASPRC['queue.options'].split()]
+        cmdlist += ['-N', '{0}'.format(jobname),
+                    '-l', 'walltime={0}'.format(VASPRC['queue.walltime']),
+                    '-l', 'nodes={0}:ppn={1}'.format(VASPRC['queue.nodes'],
+                                                     VASPRC['queue.ppn']),
+                    '-l', 'mem={0}'.format(VASPRC['queue.mem']),
+                    '-M', VASPRC['user.email']]
+        p = sp.Popen(cmdlist,
+                     stdin=sp.PIPE,
+                     stdout=sp.PIPE,
+                     stderr=sp.PIPE,
+                     universal_newlines=True)
+
+        out, err = p.communicate(script)
+
+
+        return None, None, None
+
+        # if calc.potential_energy is None:
+        #    return None, None, None
+     
+
+    else: # I don't think this will work unless the calculation is complete!
+
+        os.chdir(wd)
+
+        import pyprocar
+
+        pyprocar.unfold(
+            fname='PROCAR',
+            poscar='POSCAR',
+            outcar='OUTCAR',
+            supercell_matrix=np.diag(supercell_size),
+            ispin=None, # None for non-spin polarized calculation. For spin polarized case, ispin=1: up, ispin=2: down
+            efermi=None,
+            shift_efermi=True,
+            elimit=(-2, 2), # kticks=[0, 36, 54, 86, 110, 147, 165, 199], knames=['$\Gamma$', 'K', 'M', '$\Gamma$', 'A', 'H', 'L', 'A'],
+            print_kpts=False,
+            show_band=True,
+            width=4,
+            color='blue',
+            savetab='unfolding.csv',
+            savefig='unfolded_band.png',
+            exportplt=False)
+
+        return None, None, None
+        '''
+        from unfold import unfold
+
+        WaveSuper = unfold(M=M, wavecar='WAVECAR')
+        sw = WaveSuper.spectral_weight(kpath_uc)
+
+        from unfold import EBS_cmaps
+        e0, sf = WaveSuper.spectral_function(nedos=4000)
+        # or show the effective band structure with colormap
+        EBS_cmaps(kpath_sc, unit_cell, e0, sf, nseg=nseg,#  eref=-4.01,
+                  show=False) #,
+                  # ylim=(-3, 4))
+        '''
+
+        plt.savefig('unfolded_bandstructure.png')
+
+
+        '''
+        # In the fol
+        archiveKpts = os.path.join(wd, 'KPOINTS_old')
+        originalKpts = os.path.join(wd, 'KPOINTS')
+        if not os.path.exists(archiveKpts): # archive the original KPOINTS file
+            shutil.copy(originalKpts, archiveKpts)
+
+        with open(archiveKpts, 'r') as kpts_infile: # get lines of old KPOINTS
+            KPtsLines = kpts_infile.readlines()
+
+        # Append labels for high-symmetry points to lines of the KPOINTS file
+        reject_chars = '$'
+        for idx, label in enumerate(labels):
+            newlabel = label
+            for ch in reject_chars:
+              newlabel = newlabel.replace(ch, '')
+
+            KPtsLines[4+idx] = KPtsLines[4+idx][:-1] + f' ! {newlabel}\n'
+
+        # Write a new version of the k-points file
+        with open(originalKpts, 'w') as kpts_outfile:
+            for line in KPtsLines:
+                kpts_outfile.write(line)
+    
+        # This is John Kitchin's original band structure visualization
+        fig = plt.figure()
+        with open(os.path.join(wd, 'EIGENVAL')) as f:
+            # skip 5 lines
+            f.readline()
+            f.readline()
+            f.readline()
+            f.readline()
+            f.readline()
+            unknown, npoints, nbands = [int(x) for x in f.readline().split()]
+
+            f.readline()  # skip line
+            
+            band_energies = [[] for i in range(nbands)]
+
+            for i in range(npoints):
+                x, y, z, weight = [float(x) for x in f.readline().split()]
+
+                for j in range(nbands):
+                    fields = f.readline().split()
+                    id, energy = int(fields[0]), float(fields[1])
+                    band_energies[id - 1].append(energy)
+                f.readline()  # skip line
+
+        ax1 = plt.subplot(121)
+        for i in range(nbands):
+            plt.plot(list(range(npoints)), np.array(band_energies[i]) - ef)
+
+        ax = plt.gca()
+        ax.set_xticks([])  # no tick marks
+        plt.xlabel('k-vector')
+        plt.ylabel('Energy (eV)')
+
+        nticks = len(labels) / 2 + 1
+        ax.set_xticks(np.linspace(0, npoints, nticks))
+        L = []
+        L.append(labels[0])
+        for i in range(2, len(labels)):
+            if i % 2 == 0:
+                L.append(labels[i])
+            else:
+                pass
+        L.append(labels[-1])
+        ax.set_xticklabels(L)
+        plt.axhline(0, c='r')
+
+        plt.subplot(122, sharey=ax1)
+        plt.plot(d, e)
+        plt.axhline(0, c='r')
+        plt.ylabel('energy (eV)')
+        plt.xlabel('DOS')
+
+        plt.subplots_adjust(wspace=0.26)
+        if show:
+            plt.show()
+        return (npoints, band_energies, fig)
+        '''
 
 
 
