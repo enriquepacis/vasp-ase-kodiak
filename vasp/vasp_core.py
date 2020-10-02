@@ -65,6 +65,15 @@ def VaspExceptionHandler(calc, exc_type, exc_value, exc_traceback):
                               file=sys.stdout)
     raise
 
+'''
+This is a temporary addition by Erik Blair
+'''
+def compareDicts(A, B):
+    with open('tempEPB.txt', 'w+') as etxt:
+        etxt.write('Type of A: {0}\n'.format(type(A)))
+        etxt.write('Type of B: {0}\n'.format(type(B)))
+
+    
 
 class Vasp(FileIOCalculator, object):
     """Class for doing VASP calculations.
@@ -794,6 +803,7 @@ class Vasp(FileIOCalculator, object):
 
         log.debug('atoms IMM: {}'.format(atoms.get_initial_magnetic_moments()))
         system_changes = FileIOCalculator.check_state(self, atoms)
+
         # Ignore boundary conditions:
         if 'pbc' in system_changes:
             system_changes.remove('pbc')
@@ -856,6 +866,22 @@ class Vasp(FileIOCalculator, object):
 
             file_params['ldau_luj'] = ldau_luj
 
+        '''
+        some_dict = {k: v for k, v in list(self.parameters.items())
+                     if v is not None}
+
+        with open('tempEPB.txt', 'w+') as fout:
+            fout.write('self.parameters.items():\n')
+            for k, v in list(self.parameters.items()):
+                fout.write(f'   {k}: {v}\n')
+            fout.write('file_params:\n')
+            for k in file_params:
+                fout.write(' file_params[{0}] = {1}\n'.format(k,
+                                                              file_params[k]))
+
+            fout.write('some_dict excludes None elements from self.parameters:\n')
+        '''  
+
         if not {k: v for k, v in list(self.parameters.items())
                 if v is not None} == file_params:
             new_keys = set(self.parameters.keys()) - set(file_params.keys())
@@ -878,11 +904,14 @@ class Vasp(FileIOCalculator, object):
         log.debug('Resetting calculator.')
         self.results = {}
 
-    def update(self, atoms=None):
+    def update(self, atoms=None, force=False):
         """Updates calculator.
 
         If a calculation is required,  run it, otherwise updates results.
 
+        Update - E.P.B.
+        I added a 'force' parameter by which we can force the calculation.
+        Since update causes 
         """
         if atoms is None:
             atoms = self.get_atoms()
@@ -904,6 +933,7 @@ class Vasp(FileIOCalculator, object):
             atoms = self.get_atoms()
 
         system_changes = self.check_state(atoms)
+
         if system_changes:
             log.debug('Calculation needed for {}'.format(system_changes))
             return True
