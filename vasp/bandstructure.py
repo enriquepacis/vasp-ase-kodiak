@@ -30,7 +30,7 @@ def get_bandstructure(self,
     :param int kpts_nintersections: is the number of points between
       points in band structures. More makes the bands smoother.
 
-    returns (npoints, band_energies, fighandle)
+    returns (npoints, band_energies, fighandle, Energy gap, Convection band minimum, valance band maximum)
 
     """
     prevdir = os.getcwd()#store for later use
@@ -66,7 +66,7 @@ def get_bandstructure(self,
         calc.update()
 
         if calc.potential_energy is None:
-            return None, None, None
+            return None, None, None, None, None, None
 
     else: # I don't think this will work unless the calculation is complete!
 

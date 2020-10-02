@@ -175,6 +175,7 @@ def write_incar(self, incar=None):
     incar_keys = list(set(self.parameters) - set(self.special_kwargs))
     d = {key: self.parameters[key] for key in incar_keys}
 
+    print("ATTENTION: ", d)
     with open(incar, 'w') as f:
         f.write('INCAR created by Atomic Simulation Environment\n')
         for key, val in d.items():
