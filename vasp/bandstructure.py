@@ -986,13 +986,17 @@ def read_bandstats():
       print(line)
 
    if len(statlines) > 5:
-       Evbm = float(list(filter(None, statlines[6].split(' ')))[1])
-       Ecbm = float(list(filter(None, statlines[13].split(' ')))[1])
+      add = 0
+      #if there's an "Indirect band gap" line at the beginning of the ouptut -- diamond fail
+      if statlines[0].split(' ')[0] == "Indirect":
+         add = 1
+      Evbm = float(list(filter(None, statlines[6+add].split(' ')))[1])
+      Ecbm = float(list(filter(None, statlines[13+add].split(' ')))[1])
 
-       Egap = Ecbm - Evbm
+      Egap = Ecbm - Evbm
 
    else:
-       Egap, Evbm, Ecbm = None, None, None
+      Egap, Evbm, Ecbm = None, None, None
 
    # ef = '7.3f'
    # print(f'Gap = {Egap:{ef}} eV; Ecbm = {Ecbm:{ef}} eV; Evbm = {Evbm:{ef}} eV')
