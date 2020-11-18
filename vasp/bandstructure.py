@@ -90,16 +90,20 @@ def get_bandstructure(self,
                       kpts_path=None,
                       kpts_nintersections=10,
                       show=False,
-                      ylim=None):
+                      ylim=None,
+                      outdir=None,
+                      outfile=None):
     """Calculate band structure along :param kpts_path:
     :param list kpts_path: list of tuples of (label, k-point) to
       calculate path on.
     :param int kpts_nintersections: is the number of points between
       points in band structures. More makes the bands smoother.
 
-    returns (npoints, band_energies, fighandle)
+    returns (npoints, band_energies, fighandle, Energy gap, Convection band minimum, valance band maximum)
 
     """
+    prevdir = os.getcwd()#store for later use
+
     self.update()
     self.stop_if(self.potential_energy is None)
 
@@ -131,7 +135,7 @@ def get_bandstructure(self,
         calc.update()
 
         if calc.potential_energy is None:
-            return None, None, None
+            return None, None, None, None, None, None
 
     else: # I don't think this will work unless the calculation is complete!
 
@@ -165,7 +169,38 @@ def get_bandstructure(self,
                                                     d=d, e=e, # DOS data
                                                     show=show)
 
-        return (npoints, band_energies, fig)
+
+        # Run sumo-bandplot, if it exists
+        check_sumo = sp.run(['which', 'sumo-bandplot'], capture_output=True)
+        found_sumo = not check_sumo.stdout == b''
+        found_band_data = os.path.exists(os.path.join(wd, 'vasprun.xml'))
+
+
+        if found_sumo and found_band_data:
+            os.chdir(wd)
+            sumo_cmd = ['sumo-bandplot']
+            run_sumo = sp.run(sumo_cmd, capture_output=True)
+            if outfile is not None:
+                shutil.copy('band.pdf', outfile)
+            else:
+                outfile = 'band.pdf'
+            if outdir is not None:
+                target = os.path.join(outdir, outfile)
+                shutil.copy(outfile, target)
+            else:
+                target = os.path.join(os.getcwd(), outfile)
+
+            Egap, Ecbm, Evbm = read_bandstats()
+            
+        else:
+            print('sumo-bandplot not found. No band plot generated.')
+            target = None
+            Egap, Ecbm, Evbm = None, None, None
+
+        #reset dir
+        os.chdir(prevdir)
+
+        return (npoints, band_energies, fig, Egap, Ecbm, Evbm)
 
 
 @monkeypatch_class(Vasp)
