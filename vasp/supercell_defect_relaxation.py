@@ -1,3 +1,7 @@
+# From: Quantum Espresso repo tools, copied over and modified for convenience.
+# Modified by: Ethan Dickey
+# Date last modified: 12/4/20
+
 from ase import Atoms
 from ase import Atom
 from ase import neighborlist

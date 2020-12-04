@@ -987,7 +987,7 @@ def read_bandstats():
 
    if len(statlines) > 5:
       add = 0
-      #if there's an "Indirect band gap" line at the beginning of the ouptut -- diamond fail
+      #if there's an "Indirect band gap" line at the beginning of the ouptut -- diamond fails
       if statlines[0].split(' ')[0] == "Indirect":
          add = 1
       Evbm = float(list(filter(None, statlines[6+add].split(' ')))[1])
