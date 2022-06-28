@@ -8,6 +8,27 @@ branch, because it seems to be for a newer Python version (3.7.0, I believe,
 on an SGE high-performance computing job scheduler). I then adapted it for use
 on Baylor's Kodiak HPC cluster, PBS system, and Python 3.7.2+.
 
+
+* The 2022 Update
+The 2022 update is designed to bring these tools up to date for
+Python 3.10+ and ASE 3.22+. Originally, when I made this fork of this
+repo, it works for our installation of Python 3.7.2 with ASE 3.19.1.
+This code block can tell you what your Python executable is, and your
+ASE version:
+#+begin_src python :results output
+import sys
+import ase
+print('Python executable: {0}'.format( sys.executable ))
+print('ASE version {0}'.format(ase.__version__))
+#+end_src
+
+#+RESULTS:
+: Python executable: /usr/local/python/3.7.2/bin/python3
+: ASE version 3.19.1
+
+When I try to run this with ASE 3.22, I get errors, apparently because
+of ASE updates.
+
 * Goals
 1. Provide an interface that allows all vasp INCAR tags without
    further modification, i.e. they are mostly just kwargs to the
@@ -285,7 +306,7 @@ print('forces = (eV/ang)\n {0}'.format(atoms.get_forces()))
 This performs the Non-SC calculation with ICHARG=11
 See: https://www.vasp.at/wiki/index.php/Si_bandstructure#Standard_self-consistent_.28SC.29_run
 '''
-n, bands, p = calc.get_bandstructure(kpts_path=[('$L$', [0.5, 0.5, 0.5]),
+n, bands, p, _, _, _ = calc.get_bandstructure(kpts_path=[('$L$', [0.5, 0.5, 0.5]),
                                                 (r'$\Gamma$', [0.0, 0.0, 0.0]),
                                                 (r'$\Gamma$', [0.0, 0.0, 0.0]),
                                                 ('$X$', [0.0, 0.5, 0.5]),
@@ -293,7 +314,7 @@ n, bands, p = calc.get_bandstructure(kpts_path=[('$L$', [0.5, 0.5, 0.5]),
                                                 ('$U$', [0.25, 0.625, 0.625]),
                                                 ('$K$', [0.375, 0.75, 0.375]),
                                                 (r'$\Gamma$', [0, 0, 0])],
-                                     kpts_nintersections=10)
+                                      kpts_nintersections=10)
 
 if p is None:
     calc.abort()
@@ -321,14 +342,50 @@ Si: (0.0, 0.0, 0.0)
 Si: (1.3575, 1.3575, 1.3575)
 The total energy is: -10.8179 eV
 forces = (eV/ang)
- [[-0. -0. -0.]
- [ 0.  0.  0.]]
+ [[ 0.  0. -0.]
+ [-0. -0.  0.]]
+Indirect band gap: 0.589 eV
+Direct band gap: 2.566 eV
+  k-point: [0.00, 0.00, 0.00]
+  k-point indices: 9, 10, 11, 12, 45
+  Band indices: 2, 5
+
+Valence band maximum:
+  Energy: 5.844 eV
+  k-point: [0.00, 0.00, 0.00]
+  k-point location: \Gamma
+  k-point indices: 9, 10, 11, 12, 45
+  Band indices: 2, 3, 4
+
+Conduction band minimum:
+  Energy: 6.433 eV
+  k-point: [0.00, 0.44, 0.44]
+  k-point location: between \Gamma-X
+  k-point indices: 20
+  Band indices: 5
+
+Using parabolic fitting of the band edges
+
+Hole effective masses:
+  m_h: -0.187 | band 2 | [0.00, 0.00, 0.00] (\Gamma) -> [0.50, 0.50, 0.50] (L)
+  m_h: -0.288 | band 2 | [0.00, 0.00, 0.00] (\Gamma) -> [0.00, 0.50, 0.50] (X)
+  m_h: -0.252 | band 2 | [0.00, 0.00, 0.00] (\Gamma) -> [0.38, 0.75, 0.38] (K)
+  m_h: -0.961 | band 3 | [0.00, 0.00, 0.00] (\Gamma) -> [0.50, 0.50, 0.50] (L)
+  m_h: -0.495 | band 3 | [0.00, 0.00, 0.00] (\Gamma) -> [0.00, 0.50, 0.50] (X)
+  m_h: -0.401 | band 3 | [0.00, 0.00, 0.00] (\Gamma) -> [0.38, 0.75, 0.38] (K)
+  m_h: -0.961 | band 4 | [0.00, 0.00, 0.00] (\Gamma) -> [0.50, 0.50, 0.50] (L)
+  m_h: -0.495 | band 4 | [0.00, 0.00, 0.00] (\Gamma) -> [0.00, 0.50, 0.50] (X)
+  m_h: -2.142 | band 4 | [0.00, 0.00, 0.00] (\Gamma) -> [0.38, 0.75, 0.38] (K)
+
+Electron effective masses:
+  m_e: 1.396 | band 5 | [0.00, 0.44, 0.44] -> [0.00, 0.00, 0.00] (\Gamma)
+
 
 #+caption: Band structure for diamond Si crystal.
 [[./images/Si-fcc-bandstructure_diamond.png]]
 
 band structure plot:
- /ion/home/blaire/materials/vasp/jtc-vasp-py3/images/Si-bands-DFT.pdf
+ /ion/home/blaire/materials/vasp/vasp-ase-kodiak-2022/images/Si-bands-DFT.pdf
 #+end_example
 
 #+attr: :width 3in
