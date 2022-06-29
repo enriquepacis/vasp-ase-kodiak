@@ -46,25 +46,17 @@ of ASE updates.
 
 1. Clone this repo somewhere, using
    #+BEGIN_SOURCE sh
-   git clone https://github.com/enriquepacis/vasp-ase-kodiak.git
+   git clone https://github.com/enriquepacis/vasp-ase-kodiak-2022.git
    #+END_SOURCE
    Note:
-   1. This will produce a folder =vasp= (I believe), with another =vasp=
+   1. This will produce a folder =vasp-ase-kodiak-2022=, with another =vasp=
       directory nested inside.
-2. /Optional/ You might want to rename the outer =vasp=
-   to something else, such as =kodiak-vasp=. I find doing so makes things
-   less confusing. To do so, you can use
-   #+BEGIN_SRC sh
-   mv vasp kodiak-vasp
-   #+END_SRC
-   in the terminal from within the folder containing the outer =vasp=.
-   Follow it up with =ls -lt= to verify your operation succeeded.
-3. Add the =kodiak-vasp= directory (or your outer =vasp= directory) to your
+2. Add the vas-ase-kodiak-2022= directory to your
    PYTHONPATH and PATH variables by adding lines like this to your
    =~/.bashrc= file
    #+BEGIN_SRC sh
-   export PYTHONPATH=path-to/kodiak-vasp:$PYTHONPATH
-   export PATH=path-to/kodiak-vasp/bin:$PATH
+   export PYTHONPATH=path-to/kodiak-vasp:$PYTHONPATH # customize this
+   export PATH=path-to/kodiak-vasp/bin:$PATH  # customize this
 
    export VASP_PP_PATH=path-to/your/psuedopotentials
    #+END_SRC
@@ -85,7 +77,7 @@ of ASE updates.
 
    I see that it found two directories containing LDA or PBE pseudopotentials
    along with the =*.tar= archives from which they were extracted.
-4. Make a =.vasprc= file, and place it in your main user directory (=~/=).
+3. Make a =.vasprc= file, and place it in your main user directory (=~/=).
    If you like, you can modify and tangle this:
    #+BEGIN_SRC text :padline no :tangle ~/.vasprc
    # adjust these for the your system
@@ -216,17 +208,30 @@ This is a configuration file that allows customization of how jobs are submitted
 ** A simple CO calculation
 This is the prototypical simple calculation.
 
+Note from EPB: _it doesn't work_. It'll take some troubleshooting.
+
 #+BEGIN_SRC python
+import os
 from ase import Atoms, Atom
 from vasp import Vasp
 from vasp.vasprc import VASPRC
-VASPRC['mode'] = 'run'
+
+VASPRC['queue.q'] = 'batch'
+queue = VASPRC['queue.q']
+VASPRC['queue.nodes'] = 4
+VASPRC['queue.ppn'] = 4
+
+# VASPRC['mode'] = 'run' # this throws an error: "vasp_std" not found
 
 co = Atoms([Atom('C', [0, 0, 0]),
             Atom('O', [1.2, 0, 0])],
            cell=(6., 6., 6.))
 
-calc = Vasp('~/dft-book-new-vasp/molecules/simple-co',  # output dir
+homedir = os.getcwd()
+imgdir = os.path.join(homedir, 'images')
+jobdir = os.path.join('molecules', f'CO-simple')
+
+calc = Vasp(jobdir,  # output dir
             xc='pbe',    # the exchange-correlation functional
             nbands=6,    # number of bands
             encut=350,   # planewave cutoff
@@ -240,9 +245,7 @@ print(co.get_forces())
 #+END_SRC
 
 #+RESULTS:
-: energy = -14.69111507 eV
-: [[ 5.09138064  0.          0.        ]
-:  [-5.09138064  0.          0.        ]]
+: None
 
 ** Band Structure of Silicon
 Here, I show how to obtain the band structure from a silicon (diamond crystal) unit cell. I show two methods: first, the simple DFT method, which is known to underestimate the band gap. Second, I use a hybrid functional which goes to a higher-level of theory.
@@ -295,7 +298,7 @@ calc = Vasp(jobdir,  # output dir
            gamma=[0,0,0],
            atoms=atoms)
 
-e = calc.potential_energy
+e = calc.potential_energy # This calls for a VASP calculation
 calc.stop_if(e is None)
 
 print(f'The total energy is: {e:8.04f} eV')
@@ -324,15 +327,16 @@ else:
     print(f'\n#+caption: Band structure for diamond Si crystal.\n[[./{figname}]]\n')
 
     # Create a band structure plot using sumo-bandplot
+    #   You may need to "pip3 install sumo-bandplot" :-)
     banddir = os.path.join(jobdir, 'bandstructure')
     os.chdir(banddir)
     sumo_cmdlist = ['sumo-bandplot', '-d', imgdir]
-    sp.Popen(sumo_cmdlist)
+    sp.Popen(sumo_cmdlist) # performs a sumo-bandplot calcuation
 
-    figname = os.path.join(imgdir, 'band.pdf')
-    figname2 = os.path.join(imgdir, 'Si-bands-DFT.pdf')
+    figname = os.path.join(imgdir, 'band.pdf') # original, non-descript sumo output
+    figname2 = os.path.join(imgdir, 'Si-bands-DFT.pdf') # new, better-named output
     if os.path.exists(figname):
-       os.rename(figname, figname2)
+       os.rename(figname, figname2) # like "mv" in Linux
     print(f'band structure plot:\n {figname2}')
 #+end_src
 
