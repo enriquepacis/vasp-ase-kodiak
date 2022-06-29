@@ -8,6 +8,27 @@ branch, because it seems to be for a newer Python version (3.7.0, I believe,
 on an SGE high-performance computing job scheduler). I then adapted it for use
 on Baylor's Kodiak HPC cluster, PBS system, and Python 3.7.2+.
 
+
+* The 2022 Update
+The 2022 update is designed to bring these tools up to date for
+Python 3.10+ and ASE 3.22+. Originally, when I made this fork of this
+repo, it works for our installation of Python 3.7.2 with ASE 3.19.1.
+This code block can tell you what your Python executable is, and your
+ASE version:
+#+begin_src python :results output
+import sys
+import ase
+print('Python executable: {0}'.format( sys.executable ))
+print('ASE version {0}'.format(ase.__version__))
+#+end_src
+
+#+RESULTS:
+: Python executable: /usr/local/python/3.7.2/bin/python3
+: ASE version 3.19.1
+
+When I try to run this with ASE 3.22, I get errors, apparently because
+of ASE updates.
+
 * Goals
 1. Provide an interface that allows all vasp INCAR tags without
    further modification, i.e. they are mostly just kwargs to the
@@ -25,25 +46,17 @@ on Baylor's Kodiak HPC cluster, PBS system, and Python 3.7.2+.
 
 1. Clone this repo somewhere, using
    #+BEGIN_SOURCE sh
-   git clone https://github.com/enriquepacis/vasp-ase-kodiak.git
+   git clone https://github.com/enriquepacis/vasp-ase-kodiak-2022.git
    #+END_SOURCE
    Note:
-   1. This will produce a folder =vasp= (I believe), with another =vasp=
+   1. This will produce a folder =vasp-ase-kodiak-2022=, with another =vasp=
       directory nested inside.
-2. /Optional/ You might want to rename the outer =vasp=
-   to something else, such as =kodiak-vasp=. I find doing so makes things
-   less confusing. To do so, you can use
-   #+BEGIN_SRC sh
-   mv vasp kodiak-vasp
-   #+END_SRC
-   in the terminal from within the folder containing the outer =vasp=.
-   Follow it up with =ls -lt= to verify your operation succeeded.
-3. Add the =kodiak-vasp= directory (or your outer =vasp= directory) to your
+2. Add the vas-ase-kodiak-2022= directory to your
    PYTHONPATH and PATH variables by adding lines like this to your
    =~/.bashrc= file
    #+BEGIN_SRC sh
-   export PYTHONPATH=path-to/kodiak-vasp:$PYTHONPATH
-   export PATH=path-to/kodiak-vasp/bin:$PATH
+   export PYTHONPATH=path-to/kodiak-vasp:$PYTHONPATH # customize this
+   export PATH=path-to/kodiak-vasp/bin:$PATH  # customize this
 
    export VASP_PP_PATH=path-to/your/psuedopotentials
    #+END_SRC
@@ -64,7 +77,7 @@ on Baylor's Kodiak HPC cluster, PBS system, and Python 3.7.2+.
 
    I see that it found two directories containing LDA or PBE pseudopotentials
    along with the =*.tar= archives from which they were extracted.
-4. Make a =.vasprc= file, and place it in your main user directory (=~/=).
+3. Make a =.vasprc= file, and place it in your main user directory (=~/=).
    If you like, you can modify and tangle this:
    #+BEGIN_SRC text :padline no :tangle ~/.vasprc
    # adjust these for the your system
@@ -195,17 +208,30 @@ This is a configuration file that allows customization of how jobs are submitted
 ** A simple CO calculation
 This is the prototypical simple calculation.
 
+Note from EPB: _it doesn't work_. It'll take some troubleshooting.
+
 #+BEGIN_SRC python
+import os
 from ase import Atoms, Atom
 from vasp import Vasp
 from vasp.vasprc import VASPRC
-VASPRC['mode'] = 'run'
+
+VASPRC['queue.q'] = 'batch'
+queue = VASPRC['queue.q']
+VASPRC['queue.nodes'] = 4
+VASPRC['queue.ppn'] = 4
+
+# VASPRC['mode'] = 'run' # this throws an error: "vasp_std" not found
 
 co = Atoms([Atom('C', [0, 0, 0]),
             Atom('O', [1.2, 0, 0])],
            cell=(6., 6., 6.))
 
-calc = Vasp('~/dft-book-new-vasp/molecules/simple-co',  # output dir
+homedir = os.getcwd()
+imgdir = os.path.join(homedir, 'images')
+jobdir = os.path.join('molecules', f'CO-simple')
+
+calc = Vasp(jobdir,  # output dir
             xc='pbe',    # the exchange-correlation functional
             nbands=6,    # number of bands
             encut=350,   # planewave cutoff
@@ -219,9 +245,7 @@ print(co.get_forces())
 #+END_SRC
 
 #+RESULTS:
-: energy = -14.69111507 eV
-: [[ 5.09138064  0.          0.        ]
-:  [-5.09138064  0.          0.        ]]
+: None
 
 ** Band Structure of Silicon
 Here, I show how to obtain the band structure from a silicon (diamond crystal) unit cell. I show two methods: first, the simple DFT method, which is known to underestimate the band gap. Second, I use a hybrid functional which goes to a higher-level of theory.
@@ -274,7 +298,7 @@ calc = Vasp(jobdir,  # output dir
            gamma=[0,0,0],
            atoms=atoms)
 
-e = calc.potential_energy
+e = calc.potential_energy # This calls for a VASP calculation
 calc.stop_if(e is None)
 
 print(f'The total energy is: {e:8.04f} eV')
@@ -285,7 +309,7 @@ print('forces = (eV/ang)\n {0}'.format(atoms.get_forces()))
 This performs the Non-SC calculation with ICHARG=11
 See: https://www.vasp.at/wiki/index.php/Si_bandstructure#Standard_self-consistent_.28SC.29_run
 '''
-n, bands, p = calc.get_bandstructure(kpts_path=[('$L$', [0.5, 0.5, 0.5]),
+n, bands, p, _, _, _ = calc.get_bandstructure(kpts_path=[('$L$', [0.5, 0.5, 0.5]),
                                                 (r'$\Gamma$', [0.0, 0.0, 0.0]),
                                                 (r'$\Gamma$', [0.0, 0.0, 0.0]),
                                                 ('$X$', [0.0, 0.5, 0.5]),
@@ -293,7 +317,7 @@ n, bands, p = calc.get_bandstructure(kpts_path=[('$L$', [0.5, 0.5, 0.5]),
                                                 ('$U$', [0.25, 0.625, 0.625]),
                                                 ('$K$', [0.375, 0.75, 0.375]),
                                                 (r'$\Gamma$', [0, 0, 0])],
-                                     kpts_nintersections=10)
+                                      kpts_nintersections=10)
 
 if p is None:
     calc.abort()
@@ -303,15 +327,16 @@ else:
     print(f'\n#+caption: Band structure for diamond Si crystal.\n[[./{figname}]]\n')
 
     # Create a band structure plot using sumo-bandplot
+    #   You may need to "pip3 install sumo-bandplot" :-)
     banddir = os.path.join(jobdir, 'bandstructure')
     os.chdir(banddir)
     sumo_cmdlist = ['sumo-bandplot', '-d', imgdir]
-    sp.Popen(sumo_cmdlist)
+    sp.Popen(sumo_cmdlist) # performs a sumo-bandplot calcuation
 
-    figname = os.path.join(imgdir, 'band.pdf')
-    figname2 = os.path.join(imgdir, 'Si-bands-DFT.pdf')
+    figname = os.path.join(imgdir, 'band.pdf') # original, non-descript sumo output
+    figname2 = os.path.join(imgdir, 'Si-bands-DFT.pdf') # new, better-named output
     if os.path.exists(figname):
-       os.rename(figname, figname2)
+       os.rename(figname, figname2) # like "mv" in Linux
     print(f'band structure plot:\n {figname2}')
 #+end_src
 
@@ -321,14 +346,50 @@ Si: (0.0, 0.0, 0.0)
 Si: (1.3575, 1.3575, 1.3575)
 The total energy is: -10.8179 eV
 forces = (eV/ang)
- [[-0. -0. -0.]
- [ 0.  0.  0.]]
+ [[ 0.  0. -0.]
+ [-0. -0.  0.]]
+Indirect band gap: 0.589 eV
+Direct band gap: 2.566 eV
+  k-point: [0.00, 0.00, 0.00]
+  k-point indices: 9, 10, 11, 12, 45
+  Band indices: 2, 5
+
+Valence band maximum:
+  Energy: 5.844 eV
+  k-point: [0.00, 0.00, 0.00]
+  k-point location: \Gamma
+  k-point indices: 9, 10, 11, 12, 45
+  Band indices: 2, 3, 4
+
+Conduction band minimum:
+  Energy: 6.433 eV
+  k-point: [0.00, 0.44, 0.44]
+  k-point location: between \Gamma-X
+  k-point indices: 20
+  Band indices: 5
+
+Using parabolic fitting of the band edges
+
+Hole effective masses:
+  m_h: -0.187 | band 2 | [0.00, 0.00, 0.00] (\Gamma) -> [0.50, 0.50, 0.50] (L)
+  m_h: -0.288 | band 2 | [0.00, 0.00, 0.00] (\Gamma) -> [0.00, 0.50, 0.50] (X)
+  m_h: -0.252 | band 2 | [0.00, 0.00, 0.00] (\Gamma) -> [0.38, 0.75, 0.38] (K)
+  m_h: -0.961 | band 3 | [0.00, 0.00, 0.00] (\Gamma) -> [0.50, 0.50, 0.50] (L)
+  m_h: -0.495 | band 3 | [0.00, 0.00, 0.00] (\Gamma) -> [0.00, 0.50, 0.50] (X)
+  m_h: -0.401 | band 3 | [0.00, 0.00, 0.00] (\Gamma) -> [0.38, 0.75, 0.38] (K)
+  m_h: -0.961 | band 4 | [0.00, 0.00, 0.00] (\Gamma) -> [0.50, 0.50, 0.50] (L)
+  m_h: -0.495 | band 4 | [0.00, 0.00, 0.00] (\Gamma) -> [0.00, 0.50, 0.50] (X)
+  m_h: -2.142 | band 4 | [0.00, 0.00, 0.00] (\Gamma) -> [0.38, 0.75, 0.38] (K)
+
+Electron effective masses:
+  m_e: 1.396 | band 5 | [0.00, 0.44, 0.44] -> [0.00, 0.00, 0.00] (\Gamma)
+
 
 #+caption: Band structure for diamond Si crystal.
 [[./images/Si-fcc-bandstructure_diamond.png]]
 
 band structure plot:
- /ion/home/blaire/materials/vasp/jtc-vasp-py3/images/Si-bands-DFT.pdf
+ /ion/home/blaire/materials/vasp/vasp-ase-kodiak-2022/images/Si-bands-DFT.pdf
 #+end_example
 
 #+attr: :width 3in
