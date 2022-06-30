@@ -51,18 +51,39 @@ of ASE updates.
    Note:
    1. This will produce a folder =vasp-ase-kodiak-2022=, with another =vasp=
       directory nested inside.
-2. Add the vas-ase-kodiak-2022= directory to your
+2. Install the pseudopotential files.
+   1. You can obtain these if you have a VASP license.
+   2. Download them them in a folder on your supercomputer,
+      =~/path/to/some/folder/=. People at our university can obtain
+      them [[https://baylor.box.com/s/zq71p9b0e6yk89echdaii4borzm624nt][here]].
+   3. You'll have to navigate to your pseudopotential folder and
+      uncompress ([[https://www.cyberciti.biz/faq/tar-extract-linux/][untar]]) the compressed archives (=*.tar= files),
+      like this:
+      #+begin_src sh
+      tar -xvf potpaw_LDA.54.tar
+      tar -xvf potpaw_PBE.54.tar
+      #+end_src
+      This should place folders =potpaw_LDA.54= and =potpaw_PBE.54=
+      inside the same directory, alongside the original =*.tar= files.
+      Inside =potpaw_LDA.54= and =potpaw_PBE.54=, you will find a
+      pseudopotential (POTCAR) for each element supported by VASP.
+3. Add the =vas-ase-kodiak-2022= directory to your
    PYTHONPATH and PATH variables by adding lines like this to your
    =~/.bashrc= file
    #+BEGIN_SRC sh
    export PYTHONPATH=path-to/kodiak-vasp:$PYTHONPATH # customize this
    export PATH=path-to/kodiak-vasp/bin:$PATH  # customize this
-
-   export VASP_PP_PATH=path-to/your/psuedopotentials
    #+END_SRC
-   These place-holder =path-to/your/psuedopotentials= should contain your
-   POTCARs. For example, in my setup, I have the pseudopotentials in
-   =~/materials/vasp/pseudo=.
+4. Tell VASP how to find the pseudopotentials by defining the =VASP_PP_PATH=
+   Linux environment variable. Add this to your =~/.bashrc= file:
+   #+begin_src sh
+   export VASP_PP_PATH=~/materials/vasp/pseudo
+   #+end_src
+   This tells VASP where your pseudopotentials are, i.e.
+   the folder =path-to/your/psuedopotentials=. For example, in my setup,
+   I have the pseudopotentials in =~/materials/vasp/pseudo=, so that
+   is what I assign to my =VASP_PP_PATH= variable. To apply these changes,
+   use =source ~/.bashrc=.
       
    After I set this up properly, then I can execute this code block:
    #+BEGIN_SRC sh
@@ -77,7 +98,8 @@ of ASE updates.
 
    I see that it found two directories containing LDA or PBE pseudopotentials
    along with the =*.tar= archives from which they were extracted.
-3. Make a =.vasprc= file, and place it in your main user directory (=~/=).
+
+4. Make a =.vasprc= file, and place it in your main user directory (=~/=).
    If you like, you can modify and tangle this:
    #+BEGIN_SRC text :padline no :tangle ~/.vasprc
    # adjust these for the your system
@@ -299,6 +321,23 @@ calc = Vasp(jobdir,  # output dir
            atoms=atoms)
 
 e = calc.potential_energy # This calls for a VASP calculation
+'''
+   This uses qsub to launch the VASP job. If the job is not
+   yet done, this function returns None for the energy.
+   The rest of this code block is not executed.
+
+   After running this code block to launch the job (and
+   after the job is complete), run it again. Post-processing
+   will take place. calc.potential_energy will return the
+   total energy of the calculation, and further stages
+   of this code block will be executed. At this time,
+   the VASP self-consistent (SC) field calculation
+   calculation will be complete.
+
+   A band structure calculation will require a non-SC
+   calculation, which usees output from the SCF calculation.
+   This is one in the calc.get_bandstructure() function.
+'''
 calc.stop_if(e is None)
 
 print(f'The total energy is: {e:8.04f} eV')
@@ -319,9 +358,24 @@ n, bands, p, _, _, _ = calc.get_bandstructure(kpts_path=[('$L$', [0.5, 0.5, 0.5]
                                                 (r'$\Gamma$', [0, 0, 0])],
                                       kpts_nintersections=10)
 
+"""
+   The above code launches the non-SC calculation. If it's not
+   yet done, get_bandstructure returns None in the return values.
+   Thus, the invocation of get_bandstructure returns None the first
+   time, and the calc.abort() below stops further processing.
+
+   When the non-SC calculation is done, run this code block yet again,
+   and it should make the band structure diagram for you.
+"""
 if p is None:
     calc.abort()
 else:
+    """
+       The band structure plot is generated using two methods:
+       1. A function inside get_bandstructure() makes a png using
+          matplotlib
+       2. sumo-bandplot makes a production-quality pdf.
+    """
     figname = 'images/Si-fcc-bandstructure_diamond.png'
     p.savefig(figname)
     print(f'\n#+caption: Band structure for diamond Si crystal.\n[[./{figname}]]\n')
@@ -513,6 +567,8 @@ sumo-bandstats did not find a band gap.
 
 ** A functional approach to calculations
 
+_Note_: this doesn't work.
+
 Here we use list comprehensions to calculate the energy as a function of bond lengths.
 #+BEGIN_SRC python :results output :exports both
 from vasp import Vasp
@@ -541,7 +597,6 @@ print(energies)
 #+END_SRC
 
 #+RESULTS:
-: [-14.21584765, -14.72174343, -14.84115208, -14.69111507, -14.35508371]
 
 ** Some new ideas in job management
 By default, many exceptions are handled automatically, and if calculations are not finished the quantities are returned as None. This leads to some challenges if you want to do analysis before the results are ready.
